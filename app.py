@@ -1,6 +1,7 @@
 import os
 import logging
 import re
+import time
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
@@ -94,7 +95,7 @@ class AliExpressAffiliateBot:
 🆔 التاغ التابع: `{self.config.AFFILIATE_TAG}`
 🔧 الإصدار: 2.0
 🐍 Python: 3.9
-📊 الخدمة: Render.com
+📊 الخدمة: Render.com (Worker)
 
 📨 أرسل رابط منتج للبدء!
         """
@@ -241,12 +242,17 @@ class AliExpressAffiliateBot:
     def start(self):
         """بدء تشغيل البوت"""
         logger.info("🎉 بدء تشغيل بوت عمولة AliExpress...")
+        
+        # بدء البوت
         self.updater.start_polling(
             drop_pending_updates=True,
             timeout=30,
             read_latency=5.0
         )
+        
         logger.info("✅ البوت يعمل وجاهز لاستقبال الرسائل!")
+        
+        # الحفاظ على البوت شغال
         self.updater.idle()
 
 def main():
@@ -261,7 +267,15 @@ def main():
             print("📝 Please set them in Render Dashboard → Environment Variables")
             return
         
+        print("🚀 Starting AliExpress Affiliate Bot...")
+        print("📝 Service Type: Background Worker")
+        print("🔧 Initializing bot...")
+        
         bot = AliExpressAffiliateBot()
+        
+        print("✅ Bot initialized successfully!")
+        print("🤖 Bot is now running and ready to receive messages...")
+        
         bot.start()
         
     except Exception as e:
