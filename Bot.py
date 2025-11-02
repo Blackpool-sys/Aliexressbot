@@ -21,12 +21,12 @@ ALIEXPRESS_API_SECRET = os.getenv('ALIEXPRESS_API_SECRET')
 
 # Check if required environment variables are set
 if not TELEGRAM_TOKEN_BOT:
-    print("❌ Error: TELEGRAM_BOT_TOKEN environment variable is not set!")
+    print("X Error: TELEGRAM_BOT_TOKEN environment variable is not set!")
     print("Please set the environment variable or create a .env file with your bot token.")
     exit(1)
 
 if not ALIEXPRESS_API_PUBLIC or not ALIEXPRESS_API_SECRET:
-    print("❌ Error: ALIEXPRESS_API_PUBLIC and ALIEXPRESS_API_SECRET environment variables are not set!")
+    print("X Error: ALIEXPRESS_API_PUBLIC and ALIEXPRESS_API_SECRET environment variables are not set!")
     print("Please set the environment variables or create a .env file with your API credentials.")
     exit(1)
 
@@ -35,7 +35,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN_BOT)
 # Initialize Aliexpress API
 try:
     aliexpress = AliexpressApi(ALIEXPRESS_API_PUBLIC, ALIEXPRESS_API_SECRET,
-                               models.Language.AR, models.Currency.EUR, 'telegramBot')
+                               models.Language.AR, models.Currency.EUR, 'telegrame_bot')
     print("AliExpress API initialized successfully.")
 except Exception as e:
     print(f"Error initializing AliExpress API: {e}")
@@ -75,7 +75,7 @@ def get_usd_to_mad_rate():
 
 # Define function to resolve redirect chain and get final URL
 def resolve_full_redirect_chain(link):
-    """Resolve all redirects to get the final URL"""
+    """حل جميع التوجيهات للحصول على الرابط النهائي"""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                       'AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -87,82 +87,106 @@ def resolve_full_redirect_chain(link):
         final_url = response.url
         print(f"🔗 Resolved URL: {link} -> {final_url}")
         
+        # إذا كان رابط star.aliexpress، استخرج redirectUrl
         if "star.aliexpress.com" in final_url:
-            # Extract redirectUrl parameter
             parsed_url = urlparse(final_url)
             params = parse_qs(parsed_url.query)
             if 'redirectUrl' in params:
                 redirect_url = params['redirectUrl'][0]
                 print(f"🔗 Found redirectUrl: {redirect_url}")
-                return redirect_url
+                # حل التوجيه مرة أخرى إذا لزم الأمر
+                if not redirect_url.startswith('http'):
+                    redirect_url = 'https:' + redirect_url
+                return resolve_full_redirect_chain(redirect_url)
         
-        if "aliexpress.com/item" in final_url:
-            return final_url
-        elif "p/coin-index" in final_url:
-            return final_url
-        else:
-            return final_url
+        return final_url
+        
     except requests.RequestException as e:
         print(f"❌ Error resolving redirect chain for link {link}: {e}")
-        return link  # Return original link if resolution fails
+        return link  # ارجع للرابط الأصلي إذا فشل الحل
 
 # Define function to extract product ID from link
 def extract_product_id(link):
-    """Extract product ID from AliExpress link (handles redirected/shortened links)"""
+    """استخراج معرف المنتج من روابط AliExpress المختلفة"""
     print(f"🔍 Extracting product ID from: {link}")
     
-    # First resolve any redirects to get the final URL
-    resolved_link = resolve_full_redirect_chain(link)
-    print(f"🔗 Using resolved link: {resolved_link}")
-    
-    # Standard product page pattern
-    product_id_pattern = r'/item/(\d+)\.html'
-    match = re.search(product_id_pattern, resolved_link)
-    if match:
-        print(f"✅ Extracted product ID (standard): {match.group(1)}")
-        return match.group(1)
-    
-    # Coin page pattern - extract from productIds parameter
-    coin_page_pattern = r'productIds=(\d+)'
-    coin_match = re.search(coin_page_pattern, resolved_link)
-    if coin_match:
-        print(f"✅ Extracted product ID (coin-index): {coin_match.group(1)}")
-        return coin_match.group(1)
-    
-    # Alternative pattern for different URL formats (long product IDs)
-    product_id_pattern_alt = r'(\d{13,})'  # Long product IDs
-    match_alt = re.search(product_id_pattern_alt, resolved_link)
-    if match_alt:
-        print(f"✅ Extracted product ID (long format): {match_alt.group(1)}")
-        return match_alt.group(1)
-    
-    print(f"❌ Could not extract product ID from: {resolved_link}")
-    return None
+    try:
+        # First resolve any redirects to get the final URL
+        resolved_link = resolve_full_redirect_chain(link)
+        print(f"🔗 Using resolved link: {resolved_link}")
+        
+        # قائمة بأنماط الروابط المختلفة
+        patterns = [
+            # النمط الأساسي: /item/1234567890.html
+            r'/item/(\d+)\.html',
+            # نمط المنتج الطويل: /item/1005001234567890.html
+            r'/item/(\d{10,})\.html',
+            # نمط بدون .html: /item/1234567890
+            r'/item/(\d{10,})(?:\?|$)',
+            # نمط coin-index: productIds=1234567890
+            r'productIds=(\d+)',
+            # نمط تطبيق الجوال: /_m/1234567890
+            r'/_m/(\d+)',
+            # نمط المنتج البديل: /product/1234567890.html
+            r'/product/(\d+)\.html',
+            # أي رقم طويل في الرابط
+            r'/(\d{10,})(?:\.html|$)',
+            # نمط من query parameters
+            r'[?&]id=(\d+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, resolved_link)
+            if match:
+                product_id = match.group(1)
+                print(f"✅ Extracted product ID using pattern '{pattern}': {product_id}")
+                return product_id
+        
+        # إذا فشلت جميع الأنماط، جرب البحث عن أي رقم طويل
+        numbers = re.findall(r'\d{9,}', resolved_link)
+        if numbers:
+            # خذ أطول رقم (غالباً هو product_id)
+            product_id = max(numbers, key=len)
+            print(f"✅ Extracted product ID (longest number): {product_id}")
+            return product_id
+        
+        print(f"❌ Could not extract product ID from: {resolved_link}")
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error in extract_product_id: {e}")
+        return None
 
 # Define function to generate coin-index affiliate link for 620 channel
 def generate_coin_affiliate_link(product_id):
-    """Generate affiliate link using coin-index system for 620 channel"""
+    """إنشاء رابط تابع باستخدام نظام coin-index للقناة 620"""
     try:
-        # Create the coin-index URL
+        # أنشئ رابط coin-index
         coin_index_url = f"https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=syicon&productIds={product_id}"
         
-        # Generate affiliate link using the coin-index URL
-        affiliate_link = aliexpress.get_affiliate_links(coin_index_url)
-        return affiliate_link[0].promotion_link
+        # أنشئ الرابط التابع
+        affiliate_links = aliexpress.get_affiliate_links(coin_index_url)
+        if affiliate_links and len(affiliate_links) > 0:
+            return affiliate_links[0].promotion_link
+        return None
     except Exception as e:
         print(f"❌ Error generating coin affiliate link for product {product_id}: {e}")
         return None
 
 # Define function to generate bundle affiliate link for 560 channel
 def generate_bundle_affiliate_link(product_id, original_link):
-    """Generate affiliate link using bundle system for 560 channel"""
+    """إنشاء رابط تابع باستخدام نظام bundle للقناة 560"""
     try:
-        # Create the bundle URL with sourceType=560
-        bundle_url = f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={original_link}?sourceType=560&aff_fcid='
+        # تشفير الرابط الأصلي
+        encoded_url = urllib.parse.quote_plus(original_link)
+        # أنشئ رابط bundle
+        bundle_url = f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={encoded_url}?sourceType=560'
         
-        # Generate affiliate link using the bundle URL
-        affiliate_link = aliexpress.get_affiliate_links(bundle_url)
-        return affiliate_link[0].promotion_link
+        # أنشئ الرابط التابع
+        affiliate_links = aliexpress.get_affiliate_links(bundle_url)
+        if affiliate_links and len(affiliate_links) > 0:
+            return affiliate_links[0].promotion_link
+        return None
     except Exception as e:
         print(f"❌ Error generating bundle affiliate link for product {product_id}: {e}")
         return None
@@ -207,19 +231,21 @@ def extract_link(text):
 
 def get_affiliate_links(message, message_id, link):
     try:
-        # Resolve the full redirect chain first
+        # حل سلسلة التوجيه أولاً
         resolved_link = resolve_full_redirect_chain(link)
         if not resolved_link:
             bot.delete_message(message.chat.id, message_id)
             bot.send_message(message.chat.id, "❌ لم أتمكن من حل الرابط! تأكد من رابط المنتج أو أعد المحاولة.")
             return
 
-        # Extract product ID from the resolved link
+        # استخرج معرف المنتج من الرابط المحلول
         product_id = extract_product_id(resolved_link)
         if not product_id:
             bot.delete_message(message.chat.id, message_id)
-            bot.send_message(message.chat.id, "❌ لم أتمكن من استخراج معرف المنتج من الرابط.")
+            bot.send_message(message.chat.id, f"❌ لم أتمكن من استخراج معرف المنتج من الرابط.\nالرابط: {resolved_link}")
             return
+
+        print(f"🎯 Processing product ID: {product_id}")
 
         # Generate coin-index affiliate link for 620 channel
         coin_affiliate_link = generate_coin_affiliate_link(product_id)
