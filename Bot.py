@@ -447,11 +447,20 @@ def webhook():
 # Start Flask app in a separate thread
 def run_flask():
     app.run(host='0.0.0.0', port=5000)
-
+def get_server_ip():
+    try:
+        response = requests.get('https://api.ipify.org', timeout=10)
+        ip = response.text.strip()
+        print(f"🎯🎯🎯 RAILWAY SERVER IP: {ip} 🎯🎯🎯")
+        print(f"🎯 Add this IP to AliExpress IP Whitelist: {ip}")
+        return ip
+    except Exception as e:
+        print(f"❌ Error getting IP: {e}")
+        return None
 if __name__ == "__main__":
     # Check if we're running in production (webhook) or development (polling) mode
     webhook_url = os.getenv('WEBHOOK_URL')
-    
+    server_ip = get_server_ip()
     if webhook_url:
         # Production mode: Use webhook
         print("🚀 Starting bot in webhook mode...")
