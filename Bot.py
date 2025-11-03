@@ -448,10 +448,6 @@ def webhook():
 def index():
     return '🤖 Bot is running with Webhook!'
 
-# Start Flask app in a separate thread
-def run_flask():
-    app.run(host='0.0.0.0', port=PORT)
-
 if __name__ == "__main__":
     # احصل على IP الخادم أولاً لعرضه
     try:
@@ -461,31 +457,25 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Could not get IP: {e}")
     
-    # استخدم WEBHOOK دائماً على الاستضافة - لا polling أبداً
-    print("🚀 Starting bot in WEBHOOK mode...")
+    # استخدم POLLING مباشرة - لا حاجة لـ Webhook
+    print("🚀 Starting bot in POLLING mode...")
     
-    PORT = int(os.environ.get('PORT', 5000))
-    
-    # ابدأ Flask في thread منفصل
-    threading.Thread(target=run_flask, daemon=True).start()
-    
-    # ضع Webhook
-    webhook_url = os.getenv('WEBHOOK_URL')
-    if not webhook_url:
-        # أنشئ الرابط تلقائياً
-        app_name = os.environ.get('RAILWAY_STATIC_URL', 'your-app.railway.app')
-        webhook_url = f"https://{app_name}"
-    
+    # تأكد من إزالة أي Webhook سابق
     try:
         bot.remove_webhook()
-        bot.set_webhook(url=f"{webhook_url}/webhook")
-        print(f"✅ Webhook set to: {webhook_url}/webhook")
-        print("🤖 Bot is running in WEBHOOK mode successfully!")
-        print("📍 No polling - no conflict possible!")
-        
-        # حافظ على البرنامج يعمل
-        while True:
-            time.sleep(10)
-            
+        print("✅ Cleaned any existing webhooks")
     except Exception as e:
-        print(f"❌ Webhook error: {e}")
+        print(f"⚠️ Error removing webhook: {e}")
+    
+    # ابدأ Polling مباشرة
+    print("🔄 Bot is running and waiting for messages...")
+    
+    try:
+        bot.infinity_polling(
+            none_stop=True,
+            timeout=60,
+            long_polling_timeout=45,
+            skip_pending=True
+        )
+    except Exception as e:
+        print(f"❌ Polling error: {e}")
