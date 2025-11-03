@@ -10,6 +10,7 @@ from urllib.parse import urlparse, parse_qs
 import urllib.parse
 import requests
 from dotenv import load_dotenv
+import time  # أضفنا هذا
 
 # Load environment variables from .env file
 load_dotenv()
@@ -433,7 +434,6 @@ def handle_callback_query(call):
         print(f"Error in handle_callback_query: {e}")
 
 # Flask app for handling webhook
-
 app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
@@ -444,45 +444,48 @@ def webhook():
         bot.process_new_updates([update])
         return 'OK', 200
 
+@app.route('/')
+def index():
+    return '🤖 Bot is running with Webhook!'
+
 # Start Flask app in a separate thread
 def run_flask():
-    app.run(host='0.0.0.0', port=5000)
-def get_server_ip():
-    try:
-        response = requests.get('https://api.ipify.org', timeout=10)
-        ip = response.text.strip()
-        print(f"🎯🎯🎯 RAILWAY SERVER IP: {ip} 🎯🎯🎯")
-        print(f"🎯 Add this IP to AliExpress IP Whitelist: {ip}")
-        return ip
-    except Exception as e:
-        print(f"❌ Error getting IP: {e}")
-        return None
+    app.run(host='0.0.0.0', port=PORT)
+
 if __name__ == "__main__":
-    # Check if we're running in production (webhook) or development (polling) mode
+    # احصل على IP الخادم أولاً لعرضه
+    try:
+        ip = requests.get('https://api.ipify.org', timeout=10).text
+        print(f"🎯 RAILWAY SERVER IP: {ip}")
+        print(f"🎯 Add this to AliExpress IP Whitelist: {ip}")
+    except Exception as e:
+        print(f"❌ Could not get IP: {e}")
+    
+    # استخدم WEBHOOK دائماً على الاستضافة - لا polling أبداً
+    print("🚀 Starting bot in WEBHOOK mode...")
+    
+    PORT = int(os.environ.get('PORT', 5000))
+    
+    # ابدأ Flask في thread منفصل
+    threading.Thread(target=run_flask, daemon=True).start()
+    
+    # ضع Webhook
     webhook_url = os.getenv('WEBHOOK_URL')
-    server_ip = get_server_ip()
-    if webhook_url:
-        # Production mode: Use webhook
-        print("🚀 Starting bot in webhook mode...")
-        threading.Thread(target=run_flask).start()
-        try:
-            bot.remove_webhook()
-            bot.set_webhook(url=webhook_url)
-            print(f"✅ Webhook set to: {webhook_url}")
-        except Exception as e:
-            print(f"❌ Error setting webhook: {e}")
-    else:
-        # Development mode: Use polling
-        print("🚀 Starting bot in polling mode (development)...")
-        try:
-            # Remove any existing webhook first
-            bot.remove_webhook()
-            print("✅ Removed existing webhooks")
+    if not webhook_url:
+        # أنشئ الرابط تلقائياً
+        app_name = os.environ.get('RAILWAY_STATIC_URL', 'your-app.railway.app')
+        webhook_url = f"https://{app_name}"
+    
+    try:
+        bot.remove_webhook()
+        bot.set_webhook(url=f"{webhook_url}/webhook")
+        print(f"✅ Webhook set to: {webhook_url}/webhook")
+        print("🤖 Bot is running in WEBHOOK mode successfully!")
+        print("📍 No polling - no conflict possible!")
+        
+        # حافظ على البرنامج يعمل
+        while True:
+            time.sleep(10)
             
-            # Start polling
-            print("🔄 Bot is running... Press Ctrl+C to stop.")
-            bot.infinity_polling(none_stop=True, timeout=10, long_polling_timeout=5)
-        except KeyboardInterrupt:
-            print("\n👋 Bot stopped by user.")
-        except Exception as e:
-            print(f"❌ Error in polling mode: {e}")
+    except Exception as e:
+        print(f"❌ Webhook error: {e}")
