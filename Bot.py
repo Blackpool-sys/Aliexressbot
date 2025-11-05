@@ -1,5 +1,6 @@
 import os
 import logging
+import sys
 import aiohttp
 import asyncio
 import json
@@ -13,13 +14,33 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# التوكن من متغير البيئة
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
-ALI_AFFILIATE_KEY = os.environ.get('ALI_AFFILIATE_KEY', 'demo_key')
+# التحقق من BOT_TOKEN - مخصص لـ Railway Variables
+def check_environment():
+    """التحقق من متغيرات البيئة في Railway"""
+    BOT_TOKEN = os.environ.get('BOT_TOKEN')
+    
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN not found in Railway Environment Variables!")
+        logger.info("💡 Please add BOT_TOKEN in Railway Dashboard:")
+        logger.info("   1. Go to your project in Railway")
+        logger.info("   2. Click on 'Variables'")
+        logger.info("   3. Add: Name=BOT_TOKEN, Value=your_bot_token")
+        logger.info("   4. Redeploy the project")
+        sys.exit(1)
+    
+    # التحقق من صحة التوكن
+    if ':' not in BOT_TOKEN:
+        logger.error("❌ Invalid BOT_TOKEN format!")
+        logger.info("💡 BOT_TOKEN should look like: 1234567890:ABCdefGHIjklMnOpQRSTUvWXYZ")
+        sys.exit(1)
+    
+    logger.info("✅ BOT_TOKEN loaded successfully from Railway Variables")
+    return BOT_TOKEN
 
-if not BOT_TOKEN:
-    logger.error("❌ BOT_TOKEN not found!")
-    exit(1)
+# الحصول على التوكن
+BOT_TOKEN = check_environment()
+ALI_AFFILIATE_KEY = os.environ.get('ALI_AFFILIATE_KEY', 'demo_key')
+EPROFIT_API_KEY = os.environ.get('EPROFIT_API_KEY', 'demo_eprofit_key')
 
 class BotFinder:
     def __init__(self):
@@ -32,6 +53,7 @@ class BotFinder:
             self.application = Application.builder().token(BOT_TOKEN).build()
             self._setup_handlers()
             logger.info("✅ BotFinder setup completed")
+            logger.info("✅ Using Railway Environment Variables")
         except Exception as e:
             logger.error(f"❌ Bot setup failed: {e}")
             raise
@@ -471,7 +493,7 @@ class AffiliateAPI:
                 
                 params = {
                     'url': product_link,
-                    'api_key': os.environ.get('EPROFIT_KEY', 'demo'),
+                    'api_key': EPROFIT_API_KEY,
                     'country': 'US',
                     'currency': 'USD'
                 }
@@ -603,7 +625,7 @@ def main():
     """الدالة الرئيسية"""
     try:
         logger.info("=" * 50)
-        logger.info("🤖 BOTFINDER WITH REAL APIs - STARTING...")
+        logger.info("🤖 BOTFINDER WITH RAILWAY VARIABLES - STARTING...")
         logger.info("=" * 50)
         
         bot = BotFinder()
