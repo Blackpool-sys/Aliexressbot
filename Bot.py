@@ -1,7 +1,6 @@
 import os
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+import telebot
 from api import advanced_api
 from product_filter import product_filter
 import asyncio
@@ -15,7 +14,13 @@ logger = logging.getLogger(__name__)
 
 # التوكن من متغير البيئة في Railway
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-PORT = int(os.environ.get('PORT', 8443))
+
+if not BOT_TOKEN:
+    logger.error("❌ BOT_TOKEN not found in environment variables!")
+    exit(1)
+
+# إنشاء كائن البوت
+bot = telebot.TeleBot(BOT_TOKEN)
 
 def format_offer_message(offer, index):
     """تنسيق رسالة العرض"""
@@ -29,19 +34,19 @@ def format_offer_message(offer, index):
 🏷 **{title}**
 
 💰 **السعر:** ${offer.get('current_price', 'N/A')} 
-   ~~${offer.get('original_price', 'N/A')}~~
 📉 **الخصم الحقيقي:** {offer.get('real_discount', 0)}%
 ⏰ **{offer.get('time_text', 'صالح اليوم')}**
 
 ⭐ **التقييم:** {offer.get('rating', 'N/A')}/5
 🛒 **تم بيع:** {offer.get('sales', 0)} قطعة
 
-🔗 **رابط الشراء:** [اضغط هنا]({offer.get('product_url', '#')})
-
 📊 **قوة العرض:** {offer.get('hot_score', 0)} نقطة
+
+🔗 [رابط الشراء]({offer.get('product_url', '#')})
 """
 
-async def start_command(update: Update, context: CallbackContext):
+@bot.message_handler(commands=['start'])
+def start_command(message):
     """أمر البدء"""
     welcome_text = """
 🎯 **مرحباً بك في بوت العروض الحصرية!**
@@ -54,37 +59,54 @@ async def start_command(update: Update, context: CallbackContext):
 
 🔥 **احصل على أفضل العروض من AliExpress بخصومات حقيقية!**
     """
-    await update.message.reply_text(welcome_text)
+    bot.reply_to(message, welcome_text, parse_mode='Markdown')
 
-async def hot_offers_command(update: Update, context: CallbackContext):
+@bot.message_handler(commands=['hot', 'عروض'])
+def hot_offers_command(message):
     """أمر العروض الساخنة"""
     try:
         # إرسال رسالة انتظار
-        wait_msg = await update.message.reply_text("🔍 **جاري البحث عن أفضل العروض الساخنة...**")
+        wait_msg = bot.reply_to(message, "🔍 **جاري البحث عن أفضل العروض الساخنة...**", parse_mode='Markdown')
         
-        # جلب العروض من المصادر المتقدمة
-        hot_offers = await advanced_api.get_real_discounts()
+        # جلب العروض
+        hot_offers = asyncio.run(advanced_api.get_real_discounts())
         
         # تصفية العروض
         filtered_offers = product_filter.filter_hot_products(hot_offers)
         
         if not filtered_offers:
-            await wait_msg.edit_text("⚠️ **لا توجد عروض ساخنة حالياً**\nجرب مرة أخرى بعد ساعة 🕒")
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=wait_msg.message_id,
+                text="⚠️ **لا توجد عروض ساخنة حالياً**\nجرب مرة أخرى بعد ساعة 🕒", 
+                parse_mode='Markdown'
+            )
             return
         
-        # إرسال رسالة النتائج
-        await wait_msg.edit_text(f"🎯 **تم العثور على {len(filtered_offers)} عرض ساخن**\n\n**أفضل العروض اليوم:**")
+        # تحديث رسالة الانتظار
+        bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=wait_msg.message_id,
+            text=f"🎯 **تم العثور على {len(filtered_offers)} عرض ساخن**\n\n**أفضل العروض اليوم:**", 
+            parse_mode='Markdown'
+        )
         
         # إرسال أفضل 5 عروض
         for i, offer in enumerate(filtered_offers[:5], 1):
             offer_message = format_offer_message(offer, i)
-            await update.message.reply_text(offer_message, disable_web_page_preview=True)
+            bot.send_message(
+                message.chat.id, 
+                offer_message, 
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
             
     except Exception as e:
         logger.error(f"Error in hot offers command: {str(e)}")
-        await update.message.reply_text("❌ حدث خطأ أثناء جلب العروض. جرب مرة أخرى لاحقاً.")
+        bot.reply_to(message, "❌ حدث خطأ أثناء جلب العروض. جرب مرة أخرى لاحقاً.")
 
-async def help_command(update: Update, context: CallbackContext):
+@bot.message_handler(commands=['help'])
+def help_command(message):
     """أمر المساعدة"""
     help_text = """
 🆘 **مساعدة البوت:**
@@ -102,52 +124,13 @@ async def help_command(update: Update, context: CallbackContext):
 
 📞 **لل دعم:** تواصل مع المطور
     """
-    await update.message.reply_text(help_text)
+    bot.reply_to(message, help_text, parse_mode='Markdown')
 
-async def handle_message(update: Update, context: CallbackContext):
-    """معالجة الرسائل النصية"""
-    text = update.message.text
-    await update.message.reply_text("🤖 استخدم /hot للحصول على أفضل العروض!")
-
-async def error_handler(update: Update, context: CallbackContext):
-    """معالج الأخطاء"""
-    logger.error(f"Error: {context.error}")
-
-def main():
-    """الدالة الرئيسية"""
-    if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN not found in environment variables!")
-        return
-    
-    # إنشاء التطبيق
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # إضافة المعالجات
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("hot", hot_offers_command))
-    application.add_handler(CommandHandler("عروض", hot_offers_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # معالج الأخطاء
-    application.add_error_handler(error_handler)
-    
-    # بدء البوت على Railway
-    if 'RAILWAY_STATIC_URL' in os.environ:
-        # استخدام webhook على Railway
-        webhook_url = f"https://{os.environ['RAILWAY_STATIC_URL']}/{BOT_TOKEN}"
-        logger.info(f"🚀 Starting webhook on Railway: {webhook_url}")
-        
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=BOT_TOKEN,
-            webhook_url=webhook_url
-        )
-    else:
-        # استخدام polling للتطوير المحلي
-        logger.info("🤖 البوت يعمل في وضع التطوير (Polling)...")
-        application.run_polling()
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    """معالجة جميع الرسائل الأخرى"""
+    bot.reply_to(message, "🤖 استخدم /hot للحصول على أفضل العروض!")
 
 if __name__ == '__main__':
-    main()
+    logger.info("🤖 البوت يعمل الآن...")
+    bot.infinity_polling()
