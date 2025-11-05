@@ -13,8 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# التوكن من متغير البيئة
-BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
+# التوكن من متغير البيئة في Railway
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+PORT = int(os.environ.get('PORT', 8443))
 
 def format_offer_message(offer, index):
     """تنسيق رسالة العرض"""
@@ -114,6 +115,10 @@ async def error_handler(update: Update, context: CallbackContext):
 
 def main():
     """الدالة الرئيسية"""
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN not found in environment variables!")
+        return
+    
     # إنشاء التطبيق
     application = Application.builder().token(BOT_TOKEN).build()
     
@@ -127,9 +132,22 @@ def main():
     # معالج الأخطاء
     application.add_error_handler(error_handler)
     
-    # بدء البوت
-    print("🤖 البوت يعمل الآن...")
-    application.run_polling()
+    # بدء البوت على Railway
+    if 'RAILWAY_STATIC_URL' in os.environ:
+        # استخدام webhook على Railway
+        webhook_url = f"https://{os.environ['RAILWAY_STATIC_URL']}/{BOT_TOKEN}"
+        logger.info(f"🚀 Starting webhook on Railway: {webhook_url}")
+        
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=BOT_TOKEN,
+            webhook_url=webhook_url
+        )
+    else:
+        # استخدام polling للتطوير المحلي
+        logger.info("🤖 البوت يعمل في وضع التطوير (Polling)...")
+        application.run_polling()
 
 if __name__ == '__main__':
     main()
