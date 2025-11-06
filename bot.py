@@ -229,15 +229,44 @@ def generate_bundle_affiliate_link(product_id, original_link):
         print(f"❌ Error generating bundle affiliate link for product {product_id}: {e}")
         return None
 
-# Define bot handlers
-@bot.message_handler(commands=['start'])
+# إضافة معالج للأوامر الجديدة
+@bot.message_handler(commands=['start', 'help'])
 def welcome_user(message):
     print("Handling /start command")
+    
+    # رسالة الترحيب التفصيلية
+    welcome_message = """
+🎉 **مرحباً بك في بوت AliExpress الذكي!** 
+
+🤖 **ماذا يمكنني أن أفعل لك؟**
+
+✅ أنا متخصص في البحث عن منتجات AliExpress لتوفير المال
+✅ أحصل لك على أفضل العروض والتخفيضات
+✅ أقارن الأسعار بين مختلف البائعين
+✅ أوفر لك روابط حصرية بأسعار مخفضة
+
+🛍️ **كيف تستفيد من خدماتي؟**
+
+1. 🔍 ابحث عن أي منتج تريده على AliExpress
+2. 📋 انسخ رابط المنتج
+3. 📤 أرسل الرابط لي هنا
+4. 💰 سأعرض لك أفضل العروض والتخفيضات المتاحة!
+
+💰 **مميزات إضافية:**
+• عرض العملات والمكافآت
+• تخفيضات على سلة التسوق
+• عروض حصرية يومية
+• ألعاب لجمع النقاط
+
+🚀 **لتبدأ، اختر أحد الخيارات أدناه أو أرسل لي رابط منتج!**
+    """
+    
     bot.send_message(
         message.chat.id,
-        "مرحبا بكم👋 \n" 
-        "أنا علي إكسبريس بوت أقوم بتخفيض المنتجات و البحث  عن أفضل العروض إنسخ رابط المنتج وضعه هنا 👇 ستجد جميع عروض المنتج بثمن أقل 🔥",
-        reply_markup=keyboardStart)
+        welcome_message,
+        reply_markup=keyboardStart,
+        parse_mode='Markdown'
+    )
 
 @bot.message_handler(commands=['ip'])
 def show_ip(message):
@@ -249,12 +278,58 @@ def show_ip(message):
         parse_mode='Markdown'
     )
 
-@bot.message_handler(func=lambda message: True)
+# معالج للرسائل الأولى (عند بدء المحادثة)
+@bot.message_handler(content_types=['text'])
+def handle_first_message(message):
+    # إذا كانت الرسالة الأولى للمستخدم (بدون أمر /start)
+    if message.text and not message.text.startswith('/'):
+        welcome_message = """
+🎉 **أهلاً وسهلاً! يبدو أنك جديد هنا** 
+
+🤖 **اسمي BotFinder وأنا مساعدك الخاص للتسوق من AliExpress**
+
+✅ **ماذا أفعل؟**
+- أبحث عن أفضل العروض على AliExpress
+- أوفر لك روابط تخفيض حصرية
+- أقارن الأسعار بين البائعين
+- أساعدك في توفير المال
+
+🛍️ **لبدء الاستفادة من خدماتي:**
+
+1. اضغط على /start لرؤية القائمة الكاملة
+2. أو أرسل لي مباشرة رابط أي منتج من AliExpress
+
+🚀 **لتبدأ الآن، انسخ رابط منتج من AliExpress وأرسله لي!**
+
+ستحصل على:
+• ✅ أفضل الأسعار
+• ✅ عروض حصرية  
+• ✅ تخفيضات إضافية
+• ✅ مقارنة بين البائعين
+        """
+        
+        bot.send_message(
+            message.chat.id,
+            welcome_message,
+            reply_markup=types.InlineKeyboardMarkup().add(
+                types.InlineKeyboardButton("🚀 ابدأ الآن - اضغط /start", callback_data='show_start')
+            ),
+            parse_mode='Markdown'
+        )
+    else:
+        # إذا لم تكن الرسالة الأولى، استمر في المعالجة العادية
+        echo_all(message)
+
+@bot.callback_query_handler(func=lambda call: call.data == 'show_start')
+def show_start_menu(call):
+    """عرض قائمة start عند الضغط على الزر"""
+    welcome_user(call.message)
+
 def echo_all(message):
     try:
         print(f"Message received: {message.text}")
         link = extract_link(message.text)
-        sent_message = bot.send_message(message.chat.id, 'المرجو الانتظار قيليلا، يتم تجهيز العروض ⏳')
+        sent_message = bot.send_message(message.chat.id, 'المرجو الانتظار قليلا، يتم تجهيز العروض ⏳')
         message_id = sent_message.message_id
         if link and "aliexpress.com" in link and not ("p/shoppingcart" in message.text.lower()):
             if "availableProductShopcartIds".lower() in message.text.lower():
@@ -470,6 +545,8 @@ def handle_callback_query(call):
             # Replace with your link and message if needed
             link = 'https://www.aliexpress.com/p/shoppingcart/index.html?'
             get_affiliate_shopcart_link(link, call.message)
+        elif call.data == 'show_start':
+            welcome_user(call.message)
         else:
             bot.send_message(call.message.chat.id, "..")
             img_link2 = "https://i.postimg.cc/VvmhgQ1h/Basket-aliexpress-telegram.png"
