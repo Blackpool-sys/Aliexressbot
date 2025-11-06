@@ -236,6 +236,18 @@ def extract_product_id(link):
         print(f"❌ خطأ في extract_product_id: {e}")
         return None
 
+def escape_markdown(text):
+    """هروب الرموز الخاصة في Markdown لتجنب أخطاء التحليل"""
+    if not text:
+        return text
+    
+    # هروب الرموز الخاصة في Markdown
+    escape_chars = r'\_*[]()~`>#+-=|{}.!'
+    for char in escape_chars:
+        text = text.replace(char, '\\' + char)
+    
+    return text
+
 # Define function to generate affiliate links
 def generate_affiliate_links(product_id, original_link):
     """إنشاء جميع الروابط التابعة للمنتج"""
@@ -307,17 +319,22 @@ def get_enhanced_product_info(product_id):
 
 # Define function to create product message
 def create_product_message(product_info, affiliate_links):
-    """إنشاء رسالة منتج محسنة"""
+    """إنشاء رسالة منتج محسنة - بدون Markdown"""
     price_pro = product_info['sale_price']
     exchange_rate = get_usd_to_mad_rate()
     price_pro_mad = price_pro * exchange_rate if exchange_rate else price_pro
     
+    # هروب النص لتجنب مشاكل Markdown
+    safe_title = escape_markdown(product_info['title'])
+    safe_rating = escape_markdown(str(product_info['rating']))
+    safe_sales_count = escape_markdown(str(product_info['sales_count']))
+    
     message_parts = [
-        f"🛒 **{product_info['title']}** 🛍",
-        f"⭐️ التقييم: {product_info['rating']}",
-        f"🛍 المبيعات: {product_info['sales_count']}",
+        f"🛒 {safe_title} 🛍",
+        f"⭐️ التقييم: {safe_rating}",
+        f"🛍 المبيعات: {safe_sales_count}",
         "",
-        f"💰 **السعر:**",
+        f"💰 السعر:",
         f"• ${price_pro:.2f} ≈ {price_pro_mad:.2f} درهم"
     ]
     
@@ -325,21 +342,21 @@ def create_product_message(product_info, affiliate_links):
     if product_info['original_price'] and product_info['original_price'] > price_pro:
         original_mad = product_info['original_price'] * exchange_rate if exchange_rate else product_info['original_price']
         message_parts.extend([
-            f"• ~~${product_info['original_price']:.2f}~~ ← **وفر {product_info['discount']}%**",
+            f"• ~~${product_info['original_price']:.2f}~~ ← وفر {product_info['discount']}%",
             f"• ~~{original_mad:.2f} درهم~~"
         ])
     
     message_parts.extend([
         "",
-        "🔗 **اختر طريقة الشراء:**",
+        "🔗 اختر طريقة الشراء:",
         "",
-        f"🛒 **رابط الشراء الأساسي:**",
+        f"🛒 رابط الشراء الأساسي:",
         f"{affiliate_links['basic']}",
         "",
-        f"💰 **صفحة العملات:**", 
+        f"💰 صفحة العملات:", 
         f"{affiliate_links['coins']}",
         "",
-        f"💎 **عروض خاصة:**",
+        f"💎 عروض خاصة:",
         f"• عرض السوبر: {affiliate_links['super']}",
         f"• عرض محدود: {affiliate_links['limited']}",
         f"• عرض الحزمة: {affiliate_links['bundle']}",
@@ -348,6 +365,44 @@ def create_product_message(product_info, affiliate_links):
     ])
     
     return "\n".join(message_parts)
+
+# Define function to create simple product message (بدون تنسيق)
+def create_simple_product_message(product_info, affiliate_links):
+    """إنشاء رسالة منتج بسيطة بدون أي تنسيق Markdown"""
+    price_pro = product_info['sale_price']
+    exchange_rate = get_usd_to_mad_rate()
+    price_pro_mad = price_pro * exchange_rate if exchange_rate else price_pro
+    
+    message = f"""🛒 {product_info['title']} 🛍
+⭐️ التقييم: {product_info['rating']}
+🛍 المبيعات: {product_info['sales_count']}
+
+💰 السعر:
+• ${price_pro:.2f} ≈ {price_pro_mad:.2f} درهم
+"""
+
+    # إضافة السعر الأصلي والتوفير إذا متوفر
+    if product_info['original_price'] and product_info['original_price'] > price_pro:
+        original_mad = product_info['original_price'] * exchange_rate if exchange_rate else product_info['original_price']
+        message += f"• ~~${product_info['original_price']:.2f}~~ ← وفر {product_info['discount']}%\n"
+        message += f"• ~~{original_mad:.2f} درهم~~\n\n"
+
+    message += f"""🔗 اختر طريقة الشراء:
+
+🛒 رابط الشراء الأساسي:
+{affiliate_links['basic']}
+
+💰 صفحة العملات:
+{affiliate_links['coins']}
+
+💎 عروض خاصة:
+• عرض السوبر: {affiliate_links['super']}
+• عرض محدود: {affiliate_links['limited']}
+• عرض الحزمة: {affiliate_links['bundle']}
+
+#AliExpressSaverBot 🎯"""
+    
+    return message
 
 # Define function to analyze link type
 def analyze_link_type(link):
@@ -441,7 +496,7 @@ def extract_link(text):
     return None
 
 def get_affiliate_links(message, message_id, link):
-    """معالجة روابط المنتجات - نسخة مبسطة وموثوقة"""
+    """معالجة روابط المنتجات - نسخة آمنة بدون Markdown"""
     try:
         print(f"🔗 معالجة الرابط: {link}")
         
@@ -462,9 +517,9 @@ def get_affiliate_links(message, message_id, link):
             # عرض معلومات مفصلة للمساعدة في التصحيح
             debug_info = (
                 f"❌ لم أستطع تحديد معرف المنتج من الرابط\n\n"
-                f"🔗 **الرابط الأصلي:**\n{link}\n\n"
-                f"🔗 **الرابط بعد التوجيهات:**\n{resolved_link}\n\n"
-                f"💡 **الحلول المقترحة:**\n"
+                f"🔗 الرابط الأصلي:\n{link}\n\n"
+                f"🔗 الرابط بعد التوجيهات:\n{resolved_link}\n\n"
+                f"💡 الحلول المقترحة:\n"
                 f"• تأكد من أن الرابط من موقع AliExpress الرسمي\n"
                 f"• حاول استخدام رابط مباشر من صفحة المنتج\n"
                 f"• تجنب روابط التطبيقات أو الروابط القصيرة"
@@ -487,22 +542,40 @@ def get_affiliate_links(message, message_id, link):
         safe_delete_message(bot, message.chat.id, message_id)
         
         if product_info and product_info.get('image'):
-            # إرسال الصورة مع التفاصيل
-            message_text = create_product_message(product_info, affiliate_links)
-            bot.send_photo(
-                message.chat.id,
-                product_info['image'],
-                caption=message_text,
-                reply_markup=keyboard,
-                parse_mode='Markdown'
-            )
+            try:
+                # المحاولة الأولى: استخدام تنسيق آمن
+                message_text = create_simple_product_message(product_info, affiliate_links)
+                bot.send_photo(
+                    message.chat.id,
+                    product_info['image'],
+                    caption=message_text,
+                    reply_markup=keyboard
+                    # لا نستخدم parse_mode لتجنب مشاكل Markdown
+                )
+            except Exception as e:
+                print(f"⚠️ Error with photo message, trying text only: {e}")
+                # إذا فشلت المحاولة الأولى، جرب بدون صورة
+                try:
+                    message_text = create_simple_product_message(product_info, affiliate_links)
+                    bot.send_message(
+                        message.chat.id,
+                        message_text,
+                        reply_markup=keyboard
+                    )
+                except Exception as e2:
+                    print(f"❌ Error with text message: {e2}")
+                    # آخر محاولة: رسالة بسيطة جداً
+                    simple_message = f"🛒 {product_info['title'][:100]}...\n\n"
+                    simple_message += f"💰 السعر: ${product_info['sale_price']:.2f}\n\n"
+                    simple_message += f"🔗 روابط الشراء:\n{affiliate_links['basic']}"
+                    bot.send_message(message.chat.id, simple_message, reply_markup=keyboard)
         else:
             # Fallback إذا لم تكن هناك معلومات منتج
             message_text = (
-                f"🔗 **اختر طريقة الشراء:**\n\n"
-                f"🛒 **رابط الشراء الأساسي:**\n{affiliate_links['basic']}\n\n"
-                f"💰 **صفحة العملات:**\n{affiliate_links['coins']}\n\n"
-                f"💎 **عروض خاصة:**\n"
+                f"🔗 اختر طريقة الشراء:\n\n"
+                f"🛒 رابط الشراء الأساسي:\n{affiliate_links['basic']}\n\n"
+                f"💰 صفحة العملات:\n{affiliate_links['coins']}\n\n"
+                f"💎 عروض خاصة:\n"
                 f"• عرض السوبر: {affiliate_links['super']}\n"
                 f"• عرض محدود: {affiliate_links['limited']}\n"
                 f"• عرض الحزمة: {affiliate_links['bundle']}\n\n"
@@ -511,8 +584,7 @@ def get_affiliate_links(message, message_id, link):
             bot.send_message(
                 message.chat.id,
                 message_text,
-                reply_markup=keyboard,
-                parse_mode='Markdown'
+                reply_markup=keyboard
             )
             
     except Exception as e:
@@ -527,11 +599,10 @@ def handle_game_link(message, message_id):
     bot.send_photo(
         message.chat.id,
         img_link2,
-        caption="🎮 **روابط ألعاب جمع العملات المعدنية**\n\n"
+        caption="🎮 روابط ألعاب جمع العملات المعدنية\n\n"
                 "استعمل هذه الألعاب يومياً لجمع أكبر عدد ممكن من العملات\n"
                 "ثم استخدمها في خفض أسعار المنتجات في سلة التسوق 👇",
-        reply_markup=keyboard_games,
-        parse_mode='Markdown'
+        reply_markup=keyboard_games
     )
 
 def build_shopcart_link(link):
@@ -565,17 +636,16 @@ def get_affiliate_shopcart_link(link, message, message_id):
             safe_delete_message(bot, message.chat.id, message_id)
             
             text2 = (
-                "🛒 **رابط تخفيض سلة التسوق**\n\n"
+                "🛒 رابط تخفيض سلة التسوق\n\n"
                 f"{affiliate_link}\n\n"
-                "⚠️ **ملاحظة:** استخدم هذا الرابط للاستفادة من التخفيضات على منتجات سلة التسوق"
+                "⚠️ ملاحظة: استخدم هذا الرابط للاستفادة من التخفيضات على منتجات سلة التسوق"
             )
             img_link3 = "https://i.postimg.cc/1Xrk1RJP/Copy-of-Basket-aliexpress-telegram.png"
             
             bot.send_photo(
                 message.chat.id, 
                 img_link3, 
-                caption=text2,
-                parse_mode='Markdown'
+                caption=text2
             )
         else:
             safe_delete_message(bot, message.chat.id, message_id)
