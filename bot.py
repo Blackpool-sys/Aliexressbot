@@ -391,12 +391,12 @@ def get_affiliate_links(message, message_id, link):
                 title_link = product_details[0].product_title
                 img_link = product_details[0].product_main_image_url
                 
-                # Convert price to MAD
-                exchange_rate = get_usd_to_mad_rate()
+                # Convert price to dzd
+                exchange_rate = get_usd_to_dzd_rate()
                 if exchange_rate:
-                    price_pro_mad = price_pro * exchange_rate
+                    price_pro_dzd = price_pro * exchange_rate
                 else:
-                    price_pro_mad = price_pro  # fallback to USD if exchange rate not available
+                    price_pro_dzd = price_pro  # fallback to USD if exchange rate not available
                 
                 print(f"Product details: {title_link}, {price_pro}, {img_link}")
                 bot.delete_message(message.chat.id, message_id)
@@ -406,7 +406,7 @@ def get_affiliate_links(message, message_id, link):
                     f" \n🛒 منتجك هو : 🔥 \n"
                     f" {title_link} 🛍 \n"
                     f" سعر المنتج : "
-                    f" {price_pro:.2f} دولار 💵 / {price_pro_mad:.2f} درهم مغربي 💵\n"
+                    f" {price_pro:.2f} دولار 💵 / {price_pro_dzd:.2f} دينار جزائري 💵\n"
                     " \n قارن بين الاسعار واشتري 🔥 \n"
                 )
                 
