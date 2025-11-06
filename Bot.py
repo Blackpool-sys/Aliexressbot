@@ -97,31 +97,76 @@ def get_usd_to_mad_rate():
         logger.error(f"❌ Error fetching exchange rate: {e}")
         return 10.0  # قيمة افتراضية
 
-# نسخة مبسطة من استخراج معرف المنتج
-def extract_product_id_simple(link):
-    """استخراج معرف المنتج بشكل مبسط"""
+def validate_aliexpress_link(link):
+    """التحقق من أن الرابط من AliExpress"""
+    ali_domains = [
+        'aliexpress.com',
+        'alibaba.com',
+        's.click.aliexpress.com',
+        'm.aliexpress.com',
+        'star.aliexpress.com'
+    ]
+    
+    return any(domain in link for domain in ali_domains)
+
+def resolve_redirects(link):
+    """حل التوجيهات للحصول على الرابط النهائي"""
     try:
-        # الأنماط الأساسية
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(link, headers=headers, timeout=10, allow_redirects=True)
+        final_url = response.url
+        logger.info(f"🔗 Redirect resolved: {link} -> {final_url}")
+        return final_url
+    except Exception as e:
+        logger.error(f"❌ Error resolving redirects: {e}")
+        return link
+
+def extract_product_id_simple(link):
+    """استخراج معرف المنتج بشكل محسن"""
+    try:
+        logger.info(f"🔍 Extracting product ID from: {link}")
+        
+        # تنظيف الرابط أولاً
+        clean_link = link.split('?')[0]  # إزالة parameters
+        
+        # الأنماط المحسنة
         patterns = [
-            r'/item/(\d+)\.html',
-            r'productIds=(\d+)',
-            r'/(\d{9,})\.html',
-            r'[?&]id=(\d+)'
+            # النمط الأساسي: /item/1005005123456789.html
+            r'/item/(\d{8,})\.html',
+            # نمط تطبيق الجوال: /_m/1005005123456789
+            r'/_m/(\d{8,})',
+            # نمط productIds: productIds=1005005123456789
+            r'productIds=(\d{8,})',
+            # نمط من query parameters
+            r'[?&]id=(\d{8,})',
+            # أي رقم طويل في المسار
+            r'/(\d{8,})(?:\.html|$)',
+            # نمط من روابط s.click
+            r's\.click\.aliexpress\.com/e/.*?/(\d{8,})',
         ]
         
         for pattern in patterns:
-            match = re.search(pattern, link)
+            match = re.search(pattern, clean_link)
             if match:
                 product_id = match.group(1)
-                logger.info(f"✅ Extracted product ID: {product_id}")
-                return product_id
+                # التحقق من صحة المعرف (عادةً 8-15 رقم)
+                if 8 <= len(product_id) <= 15:
+                    logger.info(f"✅ Extracted product ID: {product_id} using pattern: {pattern}")
+                    return product_id
         
-        # البحث عن أي رقم طويل
-        numbers = re.findall(r'\d{9,}', link)
+        # إذا فشلت الأنماط، جرب البحث في الرابط الكامل
+        numbers = re.findall(r'\d{8,}', link)
         if numbers:
-            return max(numbers, key=len)
-            
+            for num in numbers:
+                if 8 <= len(num) <= 15:  # معرفات AliExpress عادة بين 8-15 رقم
+                    logger.info(f"✅ Extracted product ID (fallback): {num}")
+                    return num
+        
+        logger.warning(f"❌ No valid product ID found in: {link}")
         return None
+        
     except Exception as e:
         logger.error(f"❌ Error extracting product ID: {e}")
         return None
@@ -130,12 +175,14 @@ def extract_product_id_simple(link):
 def safe_get_affiliate_link(url):
     """الحصول على رابط تابع بشكل آمن"""
     if not aliexpress:
+        logger.warning("⚠️ AliExpress API not available")
         return None
         
     try:
         links = aliexpress.get_affiliate_links(url)
         if links and len(links) > 0:
             return links[0].promotion_link
+        logger.warning(f"⚠️ No affiliate links returned for: {url}")
         return None
     except Exception as e:
         logger.error(f"❌ Error getting affiliate link: {e}")
@@ -199,7 +246,11 @@ def help_command(message):
 💰 **المميزات:**
 • عروض عملات مخفضة
 • عروض حزمة متنوعة
-• عروض سوبر محدودة"""
+• عروض سوبر محدودة
+
+📝 **أمثلة للروابط الصحيحة:**
+• https://www.aliexpress.com/item/1005005123456789.html
+• https://s.click.aliexpress.com/e/_DmqR7ZV"""
     
     bot.send_message(message.chat.id, help_text)
 
@@ -211,11 +262,17 @@ def handle_messages(message):
         
         # استخراج الرابط
         link_match = re.search(r'https?://[^\s]+', message.text)
-        if not link_match or "aliexpress.com" not in message.text:
+        if not link_match:
             bot.send_message(message.chat.id, "❌ يرجى إرسال رابط منتج صحيح من AliExpress")
             return
 
         link = link_match.group()
+        
+        # التحقق من أن الرابط من AliExpress
+        if not validate_aliexpress_link(link):
+            bot.send_message(message.chat.id, "❌ هذا الرابط ليس من AliExpress. يرجى إرسال رابط منتج من AliExpress فقط")
+            return
+
         sent_msg = bot.send_message(message.chat.id, '⏳ جاري البحث عن أفضل العروض...')
 
         # معالجة الرابط
@@ -228,11 +285,30 @@ def handle_messages(message):
 def process_product_link(message, link, message_id):
     """معالجة رابط المنتج"""
     try:
+        # حل التوجيهات أولاً
+        resolved_link = resolve_redirects(link)
+        logger.info(f"🔗 Using resolved link: {resolved_link}")
+        
         # استخراج معرف المنتج
-        product_id = extract_product_id_simple(link)
+        product_id = extract_product_id_simple(resolved_link)
         if not product_id:
             bot.delete_message(message.chat.id, message_id)
-            bot.send_message(message.chat.id, "❌ لم أتمكن من التعرف على المنتج. تأكد من الرابط")
+            
+            # رسالة مساعدة أكثر تفصيلاً
+            help_text = """❌ **لم أتمكن من التعرف على المنتج**
+
+🔍 **تأكد من:**
+• الرابط من AliExpress
+• الرابط يحتوي على معرف المنتج (أرقام طويلة)
+• الرابط ليس لسلة التسوق أو صفحة رئيسية
+
+📝 **أمثلة للروابط الصحيحة:**
+• https://www.aliexpress.com/item/1005005123456789.html
+• https://s.click.aliexpress.com/e/_DmqR7ZV
+
+🎯 **انسخ الرابط مباشرة من صفحة المنتج**"""
+            
+            bot.send_message(message.chat.id, help_text)
             return
 
         logger.info(f"🎯 Processing product: {product_id}")
@@ -248,7 +324,7 @@ def process_product_link(message, link, message_id):
         )
 
         # بناء الرسالة
-        message_text = "🛍 **أفضل العروض للمنتج:**\n\n"
+        message_text = f"🛍 **العروض للمنتج #{product_id}:**\n\n"
 
         if coin_link:
             message_text += f"💰 **عرض العملات:**\n{coin_link}\n\n"
@@ -262,11 +338,14 @@ def process_product_link(message, link, message_id):
         if limit_link:
             message_text += f"🔥 **عرض محدود:**\n{limit_link}\n\n"
 
+        if not any([coin_link, bundle_link, super_link, limit_link]):
+            message_text += "⚠️ **لم أتمكن من إنشاء عروض لهذا المنتج**\n\n"
+
         message_text += "🎯 **قارن الأسعار واختر الأفضل!**"
 
         # إرسال النتيجة
         bot.delete_message(message.chat.id, message_id)
-        bot.send_message(message.chat.id, message_text, reply_markup=keyboard)
+        bot.send_message(message.chat.id, message_text, reply_markup=keyboard, disable_web_page_preview=True)
         
         logger.info(f"✅ Sent offers for product {product_id}")
 
