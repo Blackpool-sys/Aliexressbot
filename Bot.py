@@ -249,7 +249,7 @@ def get_affiliate_links(message, message_id, link):
             try:
                 bot.delete_message(message.chat.id, message_id)
             except:
-                pass  # تجاهل الخطأ إذا الرسالة غير موجودة
+                pass
             bot.send_message(message.chat.id, "❌ لم أتمكن من حل الرابط! تأكد من رابط المنتج أو أعد المحاولة.")
             return
 
@@ -259,7 +259,7 @@ def get_affiliate_links(message, message_id, link):
             try:
                 bot.delete_message(message.chat.id, message_id)
             except:
-                pass  # تجاهل الخطأ إذا الرسالة غير موجودة
+                pass
             bot.send_message(message.chat.id, f"❌ لم أتمكن من استخراج معرف المنتج من الرابط.\nالرابط: {resolved_link}")
             return
 
@@ -300,11 +300,11 @@ def get_affiliate_links(message, message_id, link):
                 except:
                     print("⚠️ Could not delete message - continuing anyway")
                 
-                # Build the message with all affiliate links
+                # Build the message with all affiliate links - بدون Markdown
                 message_text = (
-                    f"🛒 **{title_link}** 🛍\n"
+                    f"🛒 {title_link} 🛍\n"
                     f"💰 السعر: {price_pro:.2f}$ / {price_pro_mad:.2f} درهم\n\n"
-                    f"🔗 **اختر طريقة الشراء:**\n"
+                    f"🔗 اختر طريقة الشراء:\n"
                 )
                 
                 # إضافة جميع الروابط
@@ -316,8 +316,7 @@ def get_affiliate_links(message, message_id, link):
                 bot.send_photo(message.chat.id,
                                img_link,
                                caption=message_text,
-                               reply_markup=keyboard,
-                               parse_mode='Markdown')
+                               reply_markup=keyboard)  # حذف parse_mode
             else:
                 # Fallback if product details couldn't be fetched
                 try:
@@ -325,14 +324,14 @@ def get_affiliate_links(message, message_id, link):
                 except:
                     print("⚠️ Could not delete message - continuing anyway")
                 
-                message_text = "🔗 **اختر طريقة الشراء:**\n"
+                message_text = "🔗 اختر طريقة الشراء:\n"
                 
                 for link_name, link_url in affiliate_links.items():
                     message_text += f"\n{link_name}:\n{link_url}\n"
                 
                 message_text += "\n#AliExpressSaverBot ✅"
                 
-                bot.send_message(message.chat.id, message_text, reply_markup=keyboard, parse_mode='Markdown')
+                bot.send_message(message.chat.id, message_text, reply_markup=keyboard)
                 
         except Exception as e:
             print(f"Error in get_affiliate_links inner try: {e}")
@@ -343,14 +342,14 @@ def get_affiliate_links(message, message_id, link):
                 print("⚠️ Could not delete message - continuing anyway")
             
             # Fallback with just links
-            message_text = "🔗 **اختر طريقة الشراء:**\n"
+            message_text = "🔗 اختر طريقة الشراء:\n"
             
             for link_name, link_url in affiliate_links.items():
                 message_text += f"\n{link_name}:\n{link_url}\n"
             
             message_text += "\n#AliExpressSaverBot ✅"
             
-            bot.send_message(message.chat.id, message_text, reply_markup=keyboard, parse_mode='Markdown')
+            bot.send_message(message.chat.id, message_text, reply_markup=keyboard)
             
     except Exception as e:
         print(f"Error in get_affiliate_links: {e}")
