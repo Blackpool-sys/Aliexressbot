@@ -112,75 +112,114 @@ def get_usd_to_mad_rate():
         print(f"❌ Error fetching exchange rate: {e}")
         return 10.0  # سعر افتراضي في حالة الخطأ
 
-# Define function to resolve redirect chain and get final URL
 def resolve_full_redirect_chain(link):
-    """حل جميع التوجيهات للحصول على الرابط النهائي"""
+    """حل جميع التوجيهات للحصول على الرابط النهائي - نسخة محسنة"""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                       'AppleWebKit/537.36 (KHTML, like Gecko) '
-                      'Chrome/58.0.3029.110 Safari/537.36'
+                      'Chrome/58.0.3029.110 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
     }
+    
     try:
         session_req = requests.Session()
-        response = session_req.get(link, allow_redirects=True, timeout=10, headers=headers)
-        final_url = response.url
-        print(f"🔗 Resolved URL: {link} -> {final_url}")
+        # عدم اتباع التوجيهات تلقائياً للتحكم فيها يدوياً
+        response = session_req.get(link, allow_redirects=False, timeout=15, headers=headers)
         
-        # إذا كان رابط star.aliexpress، استخرج redirectUrl
-        if "star.aliexpress.com" in final_url:
-            parsed_url = urlparse(final_url)
-            params = parse_qs(parsed_url.query)
-            if 'redirectUrl' in params:
-                redirect_url = params['redirectUrl'][0]
-                print(f"🔗 Found redirectUrl: {redirect_url}")
-                # حل التوجيه مرة أخرى إذا لزم الأمر
-                if not redirect_url.startswith('http'):
+        # إذا كان هناك توجيه
+        if response.status_code in [301, 302, 303, 307, 308]:
+            redirect_url = response.headers.get('Location', '')
+            print(f"🔗 التوجيه من {link} إلى {redirect_url}")
+            
+            if redirect_url:
+                # إذا كان الرابط غير مكتمل، أضف النطاق
+                if redirect_url.startswith('//'):
                     redirect_url = 'https:' + redirect_url
+                elif redirect_url.startswith('/'):
+                    parsed_original = urlparse(link)
+                    redirect_url = f"{parsed_original.scheme}://{parsed_original.netloc}{redirect_url}"
+                
+                # تابع حل التوجيهات بشكل متكرر
                 return resolve_full_redirect_chain(redirect_url)
         
+        # إذا لم يكن هناك توجيه، ارجع الرابط النهائي
+        final_url = response.url
+        print(f"✅ الرابط النهائي: {final_url}")
         return final_url
         
     except requests.RequestException as e:
-        print(f"❌ Error resolving redirect chain for link {link}: {e}")
+        print(f"❌ خطأ في حل التوجيهات للرابط {link}: {e}")
         return link  # ارجع للرابط الأصلي إذا فشل الحل
 
-# Define function to extract product ID from link
 def extract_product_id(link):
-    """استخراج معرف المنتج من روابط AliExpress المختلفة - نسخة محسنة"""
-    print(f"🔍 Extracting product ID from: {link}")
+    """استخراج معرف المنتج من روابط AliExpress المختلفة - نسخة محسنة جداً"""
+    print(f"🔍 جاري استخراج Product ID من: {link}")
     
     try:
-        # First resolve any redirects to get the final URL
+        # حل سلسلة التوجيه أولاً
         resolved_link = resolve_full_redirect_chain(link)
-        print(f"🔗 Using resolved link: {resolved_link}")
+        print(f"🔗 الرابط بعد حل التوجيهات: {resolved_link}")
         
-        # أنماط محسنة
+        # أنماط محسنة وشاملة
         patterns = [
-            # النمط الأساسي المحسن
+            # النمط الأساسي: /item/1234567890.html
             r'/item/(\d{8,15})\.html',
-            # نمط معلمات URL
+            # نمط معلمات URL: ?id=1234567890
             r'[?&]id=(\d{8,15})',
-            # نمط تطبيق الجوال المحسن
+            # نمط تطبيق الجوال: /_m/1234567890
             r'/_m/(\d{8,15})',
-            # نمط product/
+            # نمط product/: /product/1234567890.html
             r'/product/(\d{8,15})',
-            # البحث عن أرقام طويلة فقط
-            r'\b(\d{8,15})\b'
+            # نمط من query parameters مختلف
+            r'[?&]productId=(\d{8,15})',
+            # نمط من رابط التتبع
+            r'[?&]item_id=(\d{8,15})',
+            # أي رقم طويل في المسار
+            r'/(\d{8,15})(?:\.html|/?\?|$)',
         ]
         
         for pattern in patterns:
             matches = re.findall(pattern, resolved_link)
             if matches:
                 product_id = matches[0]
-                print(f"✅ تم استخراج ID: {product_id} بالنمط: {pattern}")
+                print(f"✅ تم استخراج ID: {product_id} باستخدام النمط: {pattern}")
                 return product_id
         
-        print(f"❌ لم أستطع استخراج Product ID")
+        # إذا فشلت جميع الأنماط، جرب البحث عن أي رقم طويل في الرابط
+        numbers = re.findall(r'\d{8,15}', resolved_link)
+        if numbers:
+            # خذ أطول رقم (غالباً هو product_id)
+            product_id = max(numbers, key=len)
+            print(f"✅ تم استخراج ID (أطول رقم): {product_id}")
+            return product_id
+        
+        print(f"❌ لم أستطع استخراج Product ID من الرابط: {resolved_link}")
         return None
         
     except Exception as e:
-        print(f"❌ Error in extract_product_id: {e}")
+        print(f"❌ خطأ في extract_product_id: {e}")
         return None
+
+def check_link_status(link):
+    """التحقق من حالة الرابط وإرجاع معلومات التصحيح"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(link, headers=headers, timeout=10, allow_redirects=False)
+        
+        return {
+            'status_code': response.status_code,
+            'redirect_location': response.headers.get('Location'),
+            'final_url': response.url,
+            'headers': dict(response.headers)
+        }
+    except Exception as e:
+        return {'error': str(e)}
 
 # Define function to generate affiliate links
 def generate_affiliate_links(product_id, original_link):
@@ -387,8 +426,10 @@ def extract_link(text):
     return None
 
 def get_affiliate_links(message, message_id, link):
-    """معالجة روابط المنتجات"""
+    """معالجة روابط المنتجات - نسخة محسنة"""
     try:
+        print(f"🔗 معالجة الرابط: {link}")
+        
         # حل سلسلة التوجيه أولاً
         resolved_link = resolve_full_redirect_chain(link)
         if not resolved_link:
@@ -396,14 +437,24 @@ def get_affiliate_links(message, message_id, link):
             send_error_message(bot, message.chat.id, 'invalid_link', link)
             return
 
+        print(f"✅ الرابط النهائي: {resolved_link}")
+
         # استخرج معرف المنتج من الرابط المحلول
         product_id = extract_product_id(resolved_link)
         if not product_id:
             safe_delete_message(bot, message.chat.id, message_id)
-            send_error_message(bot, message.chat.id, 'no_product_id', resolved_link)
+            
+            # عرض معلومات التصحيح للمستخدم
+            debug_info = (
+                f"❌ لم أستطع تحديد المنتج من الرابط\n\n"
+                f"🔗 الرابط الأصلي: {link}\n"
+                f"🔗 الرابط النهائي: {resolved_link}\n\n"
+                f"💡 حاول استخدام رابط مباشر من صفحة المنتج على AliExpress"
+            )
+            bot.send_message(message.chat.id, debug_info)
             return
 
-        print(f"🎯 Processing product ID: {product_id}")
+        print(f"🎯 معالجة المنتج ID: {product_id}")
 
         # إنشاء روابط تابعة
         affiliate_links = generate_affiliate_links(product_id, resolved_link)
@@ -546,6 +597,25 @@ def webhook():
 @app.route('/health', methods=['GET'])
 def health_check():
     return {'status': 'healthy', 'timestamp': datetime.now().isoformat()}, 200
+
+@app.route('/debug-link', methods=['POST'])
+def debug_link():
+    """واجهة لتصحيح الروابط"""
+    data = request.get_json()
+    link = data.get('link', '')
+    
+    if not link:
+        return {'error': 'No link provided'}, 400
+    
+    result = {
+        'original_link': link,
+        'resolved_link': resolve_full_redirect_chain(link),
+        'product_id': extract_product_id(link),
+        'link_status': check_link_status(link),
+        'link_type': analyze_link_type(link)
+    }
+    
+    return result, 200
 
 if __name__ == "__main__":
     # استخدم POLLING مباشرة - لا حاجة لـ Webhook
