@@ -11,10 +11,10 @@ import urllib.parse
 import requests
 from dotenv import load_dotenv
 
-# Load environment variables from .env file (for local development)
+# Load environment variables from .env file
 load_dotenv()
 
-# Initialize the bot with the token from Railway environment variables
+# Initialize the bot with the token
 TELEGRAM_TOKEN_BOT = os.getenv('TELEGRAM_BOT_TOKEN')
 ALIEXPRESS_API_PUBLIC = os.getenv('ALIEXPRESS_API_PUBLIC')
 ALIEXPRESS_API_SECRET = os.getenv('ALIEXPRESS_API_SECRET')
@@ -22,15 +22,53 @@ ALIEXPRESS_API_SECRET = os.getenv('ALIEXPRESS_API_SECRET')
 # Check if required environment variables are set
 if not TELEGRAM_TOKEN_BOT:
     print("X Error: TELEGRAM_BOT_TOKEN environment variable is not set!")
-    print("Please set the TELEGRAM_BOT_TOKEN environment variable in Railway.")
+    print("Please set the environment variable or create a .env file with your bot token.")
     exit(1)
 
 if not ALIEXPRESS_API_PUBLIC or not ALIEXPRESS_API_SECRET:
     print("X Error: ALIEXPRESS_API_PUBLIC and ALIEXPRESS_API_SECRET environment variables are not set!")
-    print("Please set the ALIEXPRESS_API_PUBLIC and ALIEXPRESS_API_SECRET environment variables in Railway.")
+    print("Please set the environment variables or create a .env file with your API credentials.")
     exit(1)
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN_BOT)
+
+# دالة جديدة لجلب IP الاستضافة
+def get_hosting_ip():
+    """جلب عنوان IP الخاص بالاستضافة"""
+    try:
+        # استخدام خدمات خارجية لمعرفة IP العام
+        services = [
+            'https://api.ipify.org',
+            'https://ident.me',
+            'https://checkip.amazonaws.com',
+            'https://ipinfo.io/ip'
+        ]
+        
+        for service in services:
+            try:
+                response = requests.get(service, timeout=5)
+                if response.status_code == 200:
+                    ip = response.text.strip()
+                    print(f"✅ تم جلب IP الاستضافة: {ip} من {service}")
+                    return ip
+            except Exception as e:
+                print(f"❌ فشل جلب IP من {service}: {e}")
+                continue
+        
+        # إذا فشلت جميع الخدمات، حاول الحصول على IP من متغيرات البيئة
+        railway_public_url = os.getenv('RAILWAY_PUBLIC_DOMAIN')
+        if railway_public_url:
+            print(f"🌐 استخدام Railway Public Domain: {railway_public_url}")
+            return railway_public_url
+            
+        return "غير معروف"
+    except Exception as e:
+        print(f"❌ خطأ في جلب IP الاستضافة: {e}")
+        return "غير معروف"
+
+# جلب IP الاستضافة عند التشغيل
+HOSTING_IP = get_hosting_ip()
+print(f"🌍 عنوان IP الاستضافة: {HOSTING_IP}")
 
 # Initialize Aliexpress API
 try:
@@ -201,12 +239,22 @@ def welcome_user(message):
         "أنا علي إكسبريس بوت أقوم بتخفيض المنتجات و البحث  عن أفضل العروض إنسخ رابط المنتج وضعه هنا 👇 ستجد جميع عروض المنتج بثمن أقل 🔥",
         reply_markup=keyboardStart)
 
+@bot.message_handler(commands=['ip'])
+def show_ip(message):
+    """عرض IP الاستضافة"""
+    bot.send_message(
+        message.chat.id,
+        f"🌍 عنوان IP الاستضافة الحالي هو:\n`{HOSTING_IP}`\n\n"
+        "استخدم هذا العنوان لإضافته إلى القائمة البيضاء في إعدادات AliExpress API",
+        parse_mode='Markdown'
+    )
+
 @bot.message_handler(func=lambda message: True)
 def echo_all(message):
     try:
         print(f"Message received: {message.text}")
         link = extract_link(message.text)
-        sent_message = bot.send_message(message.chat.id, 'المرجو الانتظار قليلا، يتم تجهيز العروض ⏳')
+        sent_message = bot.send_message(message.chat.id, 'المرجو الانتظار قيليلا، يتم تجهيز العروض ⏳')
         message_id = sent_message.message_id
         if link and "aliexpress.com" in link and not ("p/shoppingcart" in message.text.lower()):
             if "availableProductShopcartIds".lower() in message.text.lower():
@@ -315,7 +363,7 @@ def get_affiliate_links(message, message_id, link):
                     f"الرابط {super_links} \n"
                     f"🔥 عرض محدود : \n"
                     f"الرابط {limit_links} \n\n"
-                    "#AliExpressSaverBot ✅"
+                    "#AliExpressSuperDeals_Bot ✅"
                 )
                 
                 bot.send_photo(message.chat.id,
@@ -433,53 +481,45 @@ def handle_callback_query(call):
         print(f"Error in handle_callback_query: {e}")
 
 # Flask app for handling webhook
+
 app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    if request.headers.get('content-type') == 'application/json':
+    if request.method == 'POST':
         json_str = request.get_data().decode('UTF-8')
         update = telebot.types.Update.de_json(json_str)
         bot.process_new_updates([update])
         return 'OK', 200
-    else:
-        return 'Bad Request', 400
 
-@app.route('/')
-def index():
-    return 'Bot is running!', 200
+@app.route('/ip')
+def get_ip_route():
+    """مسار ويب لعرض IP الاستضافة"""
+    return f"🌍 عنوان IP الاستضافة الحالي: {HOSTING_IP}"
 
-@app.route('/health')
-def health():
-    return 'OK', 200
-
+# Start Flask app in a separate thread
 def run_flask():
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=5000)
 
 if __name__ == "__main__":
-    # Get Railway environment variables
-    railway_environment = os.getenv('RAILWAY_ENVIRONMENT')
-    railway_static_url = os.getenv('RAILWAY_STATIC_URL')
+    # Check if we're running in production (webhook) or development (polling) mode
+    webhook_url = os.getenv('WEBHOOK_URL')
     
-    if railway_environment == 'production' and railway_static_url:
-        # Production mode on Railway: Use webhook
-        print("🚀 Starting bot in Railway production mode (webhook)...")
-        
-        # Set webhook URL
-        webhook_url = f"{railway_static_url}/webhook"
+    if webhook_url:
+        # Production mode: Use webhook
+        print("🚀 Starting bot in webhook mode...")
+        print(f"🌍 استضافة IP: {HOSTING_IP}")
+        threading.Thread(target=run_flask).start()
         try:
             bot.remove_webhook()
             bot.set_webhook(url=webhook_url)
             print(f"✅ Webhook set to: {webhook_url}")
         except Exception as e:
             print(f"❌ Error setting webhook: {e}")
-        
-        # Start Flask server
-        run_flask()
     else:
         # Development mode: Use polling
-        print("🚀 Starting bot in development mode (polling)...")
+        print("🚀 Starting bot in polling mode (development)...")
+        print(f"🌍 استضافة IP: {HOSTING_IP}")
         try:
             # Remove any existing webhook first
             bot.remove_webhook()
