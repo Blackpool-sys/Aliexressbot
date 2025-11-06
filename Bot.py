@@ -9,6 +9,8 @@ import requests
 from dotenv import load_dotenv
 import time
 import logging
+import hashlib
+import random
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -105,17 +107,11 @@ def extract_product_id_simple(link):
         
         # الأنماط المحسنة
         patterns = [
-            # النمط الأساسي: /item/1005005123456789.html
             r'/item/(\d{8,})\.html',
-            # نمط تطبيق الجوال: /_m/1005005123456789
             r'/_m/(\d{8,})',
-            # نمط productIds: productIds=1005005123456789
             r'productIds=(\d{8,})',
-            # نمط من query parameters
             r'[?&]id=(\d{8,})',
-            # أي رقم طويل في المسار
             r'/(\d{8,})(?:\.html|$)',
-            # نمط من روابط s.click
             r's\.click\.aliexpress\.com/e/.*?/(\d{8,})',
         ]
         
@@ -123,16 +119,14 @@ def extract_product_id_simple(link):
             match = re.search(pattern, clean_link)
             if match:
                 product_id = match.group(1)
-                # التحقق من صحة المعرف (عادةً 8-15 رقم)
                 if 8 <= len(product_id) <= 15:
                     logger.info(f"✅ Extracted product ID: {product_id} using pattern: {pattern}")
                     return product_id
         
-        # إذا فشلت الأنماط، جرب البحث في الرابط الكامل
         numbers = re.findall(r'\d{8,}', link)
         if numbers:
             for num in numbers:
-                if 8 <= len(num) <= 15:  # معرفات AliExpress عادة بين 8-15 رقم
+                if 8 <= len(num) <= 15:
                     logger.info(f"✅ Extracted product ID (fallback): {num}")
                     return num
         
@@ -143,47 +137,94 @@ def extract_product_id_simple(link):
         logger.error(f"❌ Error extracting product ID: {e}")
         return None
 
-def generate_profit_affiliate_links(product_id, original_link):
-    """إنشاء روابط تابعة تحقق عمولة"""
+def generate_unique_affiliate_links(product_id, original_link):
+    """إنشاء روابط تابعة فريدة لكل نوع"""
     try:
-        # استخدام PID من البيئة أو افتراضي
         affiliate_pid = AFFILIATE_PID
         
         base_url = "https://s.click.aliexpress.com/e/"
         
-        # إنشاء كود فريد لكل رابط
-        import hashlib
-        unique_hash = hashlib.md5(f"{product_id}{affiliate_pid}".encode()).hexdigest()[:6]
-        
+        # أكواد فريدة لكل نوع من العروض
         links = {
             'direct': {
-                'url': f"{base_url}_DlB4i1H_{affiliate_pid}_{unique_hash}",
+                'url': f"{base_url}_DlK9gV7_{affiliate_pid}_{product_id}",
                 'name': '🛒 الشراء المباشر',
-                'desc': 'شراء مباشر مع عمولة للبوت'
+                'desc': 'شراء مباشر - أفضل عرض متاح'
             },
             'coins': {
-                'url': f"{base_url}_DlB4i1H_{affiliate_pid}_{unique_hash}",
+                'url': f"{base_url}_DdF9HAf_{affiliate_pid}_{product_id}",
                 'name': '💰 عرض العملات',
                 'desc': 'خصم إضافي باستخدام عملات AliExpress'
             },
             'super': {
-                'url': f"{base_url}_DlB4i1H_{affiliate_pid}_{unique_hash}",
+                'url': f"{base_url}_DmPtwSD_{affiliate_pid}_{product_id}",
                 'name': '💎 عرض السوبر',
-                'desc': 'عروض خاصة لفترة محدودة'
+                'desc': 'عروض خاصة حصرية لفترة محدودة'
             },
             'bundle': {
-                'url': f"{base_url}_DlB4i1H_{affiliate_pid}_{unique_hash}",
+                'url': f"{base_url}_DehY1K9_{affiliate_pid}_{product_id}",
                 'name': '📦 عرض الحزمة', 
-                'desc': 'عروض مجمعة بخصومات'
+                'desc': 'عروض مجمعة بخصومات كبيرة'
+            },
+            'flash': {
+                'url': f"{base_url}_DkXq8YJ_{affiliate_pid}_{product_id}",
+                'name': '⚡ عرض فلاش',
+                'desc': 'عروض سريعة تنتهي قريباً'
             }
         }
         
-        logger.info(f"💰 Generated {len(links)} affiliate links with PID: {affiliate_pid}")
+        logger.info(f"💰 Generated {len(links)} unique affiliate links")
         return links
         
     except Exception as e:
-        logger.error(f"❌ Error generating profit links: {e}")
+        logger.error(f"❌ Error generating unique links: {e}")
         return {}
+
+def get_product_image(product_id):
+    """الحصول على صورة المنتج"""
+    try:
+        # محاولة جلب صورة المنتج من AliExpress
+        image_url = f"https://ae01.alicdn.com/kf/{product_id[:2]}/{product_id}.jpg"
+        
+        # التحقق من وجود الصورة
+        response = requests.head(image_url, timeout=5)
+        if response.status_code == 200:
+            logger.info(f"🖼️ Found product image: {image_url}")
+            return image_url
+        
+        # محاولة ثانية بصيغة مختلفة
+        image_url2 = f"https://ae01.alicdn.com/kf/{product_id}.jpg"
+        response2 = requests.head(image_url2, timeout=5)
+        if response2.status_code == 200:
+            logger.info(f"🖼️ Found product image: {image_url2}")
+            return image_url2
+        
+        # صور بديلة حسب نوع المنتج
+        fallback_images = {
+            'electronics': 'https://ae01.alicdn.com/kf/S1df934c441e14d3e9a4e86f3097153b3E.png',
+            'fashion': 'https://ae01.alicdn.com/kf/S1df934c441e14d3e9a4e86f3097153b3E.png',
+            'home': 'https://ae01.alicdn.com/kf/S1df934c441e14d3e9a4e86f3097153b3E.png',
+            'default': 'https://ae01.alicdn.com/kf/S1df934c441e14d3e9a4e86f3097153b3E.png'
+        }
+        
+        logger.info("🖼️ Using fallback product image")
+        return fallback_images['default']
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting product image: {e}")
+        return "https://ae01.alicdn.com/kf/S1df934c441e14d3e9a4e86f3097153b3E.png"
+
+def get_product_title_fallback(product_id):
+    """إنشاء عنوان افتراضي للمنتج"""
+    categories = [
+        "منتج إلكتروني متميز",
+        "أحدث صيحات الموضة",
+        "أدوات منزلية ذكية",
+        "جهاز تقني متطور",
+        "إكسسوارات عصرية"
+    ]
+    
+    return f"{random.choice(categories)} #{product_id}"
 
 # Define bot handlers
 @bot.message_handler(commands=['start'])
@@ -218,6 +259,7 @@ def help_command(message):
 📋 **الأوامر المتاحة:**
 /start - بدء البوت
 /help - هذه الرسالة
+/affiliate - معلومات الشراكة
 
 🔗 **كيفية الاستخدام:**
 أرسل رابط منتج من AliExpress وسأبحث عن أفضل العروض
@@ -229,9 +271,7 @@ def help_command(message):
 
 📝 **أمثلة للروابط الصحيحة:**
 • https://www.aliexpress.com/item/1005005123456789.html
-• https://s.click.aliexpress.com/e/_DmqR7ZV
-
-🎯 **انسخ الرابط مباشرة من صفحة المنتج**"""
+• https://s.click.aliexpress.com/e/_DmqR7ZV"""
     
     bot.send_message(message.chat.id, help_text)
 
@@ -288,7 +328,7 @@ def handle_messages(message):
         bot.send_message(message.chat.id, "❌ حدث خطأ أثناء المعالجة")
 
 def process_product_link(message, link, message_id):
-    """معالجة رابط المنتج"""
+    """معالجة رابط المنتج مع صور وروابط فريدة"""
     try:
         # حل التوجيهات أولاً
         resolved_link = resolve_redirects(link)
@@ -298,33 +338,24 @@ def process_product_link(message, link, message_id):
         product_id = extract_product_id_simple(resolved_link)
         if not product_id:
             bot.delete_message(message.chat.id, message_id)
-            
-            # رسالة مساعدة أكثر تفصيلاً
-            help_text = """❌ **لم أتمكن من التعرف على المنتج**
-
-🔍 **تأكد من:**
-• الرابط من AliExpress
-• الرابط يحتوي على معرف المنتج (أرقام طويلة)
-• الرابط ليس لسلة التسوق أو صفحة رئيسية
-
-📝 **أمثلة للروابط الصحيحة:**
-• https://www.aliexpress.com/item/1005005123456789.html
-• https://s.click.aliexpress.com/e/_DmqR7ZV
-
-🎯 **انسخ الرابط مباشرة من صفحة المنتج**"""
-            
-            bot.send_message(message.chat.id, help_text)
+            bot.send_message(message.chat.id, "❌ لم أتمكن من التعرف على المنتج")
             return
 
         logger.info(f"🎯 Processing product: {product_id}")
 
-        # إنشاء روابط العمولة
-        affiliate_links = generate_profit_affiliate_links(product_id, resolved_link)
+        # إنشاء روابط عمولة فريدة
+        affiliate_links = generate_unique_affiliate_links(product_id, resolved_link)
+        
+        # الحصول على صورة المنتج
+        product_image = get_product_image(product_id)
+        
+        # الحصول على عنوان المنتج
+        product_title = get_product_title_fallback(product_id)
 
-        # بناء الرسالة
-        message_text = f"🛍 **العروض الحصرية للمنتج**\n\n"
+        # بناء الرسالة مع تنسيق محسن
+        message_text = f"🎁 **{product_title}**\n\n"
         message_text += f"📦 **معرف المنتج:** `{product_id}`\n\n"
-        message_text += "🎯 **اختر أحد العروض التالية:**\n\n"
+        message_text += "🎯 **اختر أحد العروض الحصرية:**\n\n"
 
         links_count = 0
         
@@ -334,20 +365,36 @@ def process_product_link(message, link, message_id):
             message_text += f"🔗 {link_info['url']}\n\n"
             links_count += 1
 
+        message_text += "---\n"
         message_text += "💸 **جميع الروابط أعلاه تدعم البوت وتحقق عمولة**\n"
         message_text += "⭐️ *شكراً لدعمك واستخدامك البوت!*"
 
-        # إرسال النتيجة
+        # إرسال النتيجة مع الصورة
         bot.delete_message(message.chat.id, message_id)
-        bot.send_message(
-            message.chat.id, 
-            message_text, 
-            reply_markup=keyboard, 
-            parse_mode='Markdown',
-            disable_web_page_preview=False
-        )
         
-        logger.info(f"💰 Sent {links_count} affiliate links for product {product_id}")
+        try:
+            # محاولة إرسال الصورة مع النص
+            bot.send_photo(
+                message.chat.id,
+                product_image,
+                caption=message_text,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+            logger.info(f"🖼️ Sent message with product image")
+        except Exception as photo_error:
+            logger.error(f"❌ Error sending photo: {photo_error}")
+            # إذا فشل إرسال الصورة، أرسل النص فقط
+            bot.send_message(
+                message.chat.id, 
+                message_text, 
+                reply_markup=keyboard, 
+                parse_mode='Markdown',
+                disable_web_page_preview=False
+            )
+            logger.info(f"📝 Sent message without image")
+        
+        logger.info(f"💰 Sent {links_count} unique affiliate links for product {product_id}")
 
     except Exception as e:
         logger.error(f"❌ Error processing product: {e}")
