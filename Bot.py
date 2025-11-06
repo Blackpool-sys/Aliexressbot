@@ -1,23 +1,15 @@
 import json
 import telebot
+from flask import Flask, request
+import threading
 from telebot import types
+from aliexpress_api import AliexpressApi, models
 import re
 import os
 from urllib.parse import urlparse, parse_qs
 import urllib.parse
 import requests
 from dotenv import load_dotenv
-import time
-import logging
-import hashlib
-import random
-
-# إعداد التسجيل
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -26,439 +18,462 @@ load_dotenv()
 TELEGRAM_TOKEN_BOT = os.getenv('TELEGRAM_BOT_TOKEN')
 ALIEXPRESS_API_PUBLIC = os.getenv('ALIEXPRESS_API_PUBLIC')
 ALIEXPRESS_API_SECRET = os.getenv('ALIEXPRESS_API_SECRET')
-AFFILIATE_PID = os.getenv('AFFILIATE_PID', 'mm_123456789_1234567_12345678')
 
-# التحقق من المتغيرات البيئية لـ Railway
-def check_environment():
-    """التحقق من متغيرات البيئة"""
-    if not TELEGRAM_TOKEN_BOT:
-        logger.error("❌ TELEGRAM_BOT_TOKEN not found!")
-        logger.info("💡 Please add TELEGRAM_BOT_TOKEN to Railway Environment Variables")
-        return False
-    
-    logger.info("✅ Environment check passed")
-    return True
+# Check if required environment variables are set
+if not TELEGRAM_TOKEN_BOT:
+    print("X Error: TELEGRAM_BOT_TOKEN environment variable is not set!")
+    print("Please set the environment variable or create a .env file with your bot token.")
+    exit(1)
 
-if not check_environment():
+if not ALIEXPRESS_API_PUBLIC or not ALIEXPRESS_API_SECRET:
+    print("X Error: ALIEXPRESS_API_PUBLIC and ALIEXPRESS_API_SECRET environment variables are not set!")
+    print("Please set the environment variables or create a .env file with your API credentials.")
     exit(1)
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN_BOT)
 
+# Initialize Aliexpress API
+try:
+    aliexpress = AliexpressApi(ALIEXPRESS_API_PUBLIC, ALIEXPRESS_API_SECRET,
+                               models.Language.AR, models.Currency.EUR, 'telegrame_bot')
+    print("AliExpress API initialized successfully.")
+except Exception as e:
+    print(f"Error initializing AliExpress API: {e}")
+
 # Define keyboards
-def create_keyboards():
-    """إنشاء لوحات المفاتيح"""
-    keyboardStart = types.InlineKeyboardMarkup(row_width=1)
-    btn1 = types.InlineKeyboardButton("⭐️ صفحة مراجعة وجمع النقاط يوميا ⭐️", url="https://s.click.aliexpress.com/e/_DdwUZVd")
-    btn2 = types.InlineKeyboardButton("⭐️تخفيض العملات على منتجات السلة 🛒⭐️", callback_data='click')
-    btn3 = types.InlineKeyboardButton("❤️ اشترك في القناة للمزيد من العروض ❤️", url="https://t.me/ShopAliExpressMaroc")
-    btn4 = types.InlineKeyboardButton("🎬 شاهد كيفية عمل البوت 🎬", url="https://t.me/ShopAliExpressMaroc/9")
-    keyboardStart.add(btn1, btn2, btn3, btn4)
+keyboardStart = types.InlineKeyboardMarkup(row_width=1)
+btn1 = types.InlineKeyboardButton("⭐️ صفحة مراجعة وجمع النقاط يوميا ⭐️", url="https://s.click.aliexpress.com/e/_DdwUZVd")
+btn2 = types.InlineKeyboardButton("⭐️تخفيض العملات على منتجات السلة 🛒⭐️", callback_data='click')
+btn3 = types.InlineKeyboardButton("❤️ اشترك في القناة للمزيد من العروض ❤️", url="https://t.me/ShopAliExpressMaroc")
+btn4 = types.InlineKeyboardButton("🎬 شاهد كيفية عمل البوت 🎬", url="https://t.me/ShopAliExpressMaroc/9")
+btn5 = types.InlineKeyboardButton("💰 حمل تطبيق Aliexpress عبر الضغط هنا للحصول على مكافأة 5 دولار 💰", url="https://a.aliexpress.com/_mtV0j3q")
+keyboardStart.add(btn1, btn2, btn3, btn4)
 
-    keyboard = types.InlineKeyboardMarkup(row_width=1)
-    btn1 = types.InlineKeyboardButton("⭐️ صفحة مراجعة وجمع النقاط يوميا ⭐️", url="https://s.click.aliexpress.com/e/_DdwUZVd")
-    btn2 = types.InlineKeyboardButton("⭐️تخفيض العملات على منتجات السلة 🛒⭐️", callback_data='click')
-    btn3 = types.InlineKeyboardButton("❤️ اشترك في القناة للمزيد من العروض ❤️", url="https://t.me/ShopAliExpressMaroc")
-    keyboard.add(btn1, btn2, btn3)
+keyboard = types.InlineKeyboardMarkup(row_width=1)
+btn1 = types.InlineKeyboardButton("⭐️ صفحة مراجعة وجمع النقاط يوميا ⭐️", url="https://s.click.aliexpress.com/e/_DdwUZVd")
+btn2 = types.InlineKeyboardButton("⭐️تخفيض العملات على منتجات السلة 🛒⭐️", callback_data='click')
+btn3 = types.InlineKeyboardButton("❤️ اشترك في القناة للمزيد من العروض ❤️", url="https://t.me/ShopAliExpressMaroc")
+keyboard.add(btn1, btn2, btn3)
 
-    keyboard_games = types.InlineKeyboardMarkup(row_width=1)
-    btn1 = types.InlineKeyboardButton("⭐️ صفحة مراجعة وجمع النقاط يوميا ⭐️", url="https://s.click.aliexpress.com/e/_DdwUZVd")
-    btn2 = types.InlineKeyboardButton("⭐️ لعبة Merge boss ⭐️", url="https://s.click.aliexpress.com/e/_DlCyg5Z")
-    btn3 = types.InlineKeyboardButton("⭐️ لعبة Fantastic Farm ⭐️", url="https://s.click.aliexpress.com/e/_DBBkt9V")
-    btn4 = types.InlineKeyboardButton("⭐️ لعبة قلب الاوراق Flip ⭐️", url="https://s.click.aliexpress.com/e/_DdcXZ2r")
-    keyboard_games.add(btn1, btn2, btn3, btn4)
+keyboard_games = types.InlineKeyboardMarkup(row_width=1)
+btn1 = types.InlineKeyboardButton("⭐️ صفحة مراجعة وجمع النقاط يوميا ⭐️", url="https://s.click.aliexpress.com/e/_DdwUZVd")
+btn2 = types.InlineKeyboardButton("⭐️ لعبة Merge boss ⭐️", url="https://s.click.aliexpress.com/e/_DlCyg5Z")
+btn3 = types.InlineKeyboardButton("⭐️ لعبة Fantastic Farm ⭐️", url="https://s.click.aliexpress.com/e/_DBBkt9V")
+btn4 = types.InlineKeyboardButton("⭐️ لعبة قلب الاوراق Flip ⭐️", url="https://s.click.aliexpress.com/e/_DdcXZ2r")
+btn5 = types.InlineKeyboardButton("⭐️ لعبة GoGo Match ⭐️", url="https://s.click.aliexpress.com/e/_DDs7W5D")
+keyboard_games.add(btn1, btn2, btn3, btn4, btn5)
 
-    return keyboardStart, keyboard, keyboard_games
-
-keyboardStart, keyboard, keyboard_games = create_keyboards()
-
-def validate_aliexpress_link(link):
-    """التحقق من أن الرابط من AliExpress"""
-    ali_domains = [
-        'aliexpress.com',
-        'alibaba.com',
-        's.click.aliexpress.com',
-        'm.aliexpress.com',
-        'star.aliexpress.com'
-    ]
-    
-    return any(domain in link for domain in ali_domains)
-
-def resolve_redirects(link):
-    """حل التوجيهات للحصول على الرابط النهائي"""
+# Define function to get exchange rate from USD to MAD
+def get_usd_to_mad_rate():
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(link, headers=headers, timeout=10, allow_redirects=True)
-        final_url = response.url
-        logger.info(f"🔗 Redirect resolved: {link} -> {final_url}")
-        return final_url
+        response = requests.get('https://api.exchangerate-api.com/v4/latest/USD')
+        data = response.json()
+        return data['rates']['MAD']
     except Exception as e:
-        logger.error(f"❌ Error resolving redirects: {e}")
-        return link
+        print(f"Error fetching exchange rate: {e}")
+        return None
 
-def extract_product_id_simple(link):
-    """استخراج معرف المنتج بشكل محسن"""
+# Define function to resolve redirect chain and get final URL
+def resolve_full_redirect_chain(link):
+    """حل جميع التوجيهات للحصول على الرابط النهائي"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                      'AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/58.0.3029.110 Safari/537.36'
+    }
     try:
-        logger.info(f"🔍 Extracting product ID from: {link}")
+        session_req = requests.Session()
+        response = session_req.get(link, allow_redirects=True, timeout=10, headers=headers)
+        final_url = response.url
+        print(f"🔗 Resolved URL: {link} -> {final_url}")
         
-        # تنظيف الرابط أولاً
-        clean_link = link.split('?')[0]  # إزالة parameters
+        # إذا كان رابط star.aliexpress، استخرج redirectUrl
+        if "star.aliexpress.com" in final_url:
+            parsed_url = urlparse(final_url)
+            params = parse_qs(parsed_url.query)
+            if 'redirectUrl' in params:
+                redirect_url = params['redirectUrl'][0]
+                print(f"🔗 Found redirectUrl: {redirect_url}")
+                # حل التوجيه مرة أخرى إذا لزم الأمر
+                if not redirect_url.startswith('http'):
+                    redirect_url = 'https:' + redirect_url
+                return resolve_full_redirect_chain(redirect_url)
         
-        # الأنماط المحسنة
+        return final_url
+        
+    except requests.RequestException as e:
+        print(f"❌ Error resolving redirect chain for link {link}: {e}")
+        return link  # ارجع للرابط الأصلي إذا فشل الحل
+
+# Define function to extract product ID from link
+def extract_product_id(link):
+    """استخراج معرف المنتج من روابط AliExpress المختلفة"""
+    print(f"🔍 Extracting product ID from: {link}")
+    
+    try:
+        # First resolve any redirects to get the final URL
+        resolved_link = resolve_full_redirect_chain(link)
+        print(f"🔗 Using resolved link: {resolved_link}")
+        
+        # قائمة بأنماط الروابط المختلفة
         patterns = [
-            r'/item/(\d{8,})\.html',
-            r'/_m/(\d{8,})',
-            r'productIds=(\d{8,})',
-            r'[?&]id=(\d{8,})',
-            r'/(\d{8,})(?:\.html|$)',
-            r's\.click\.aliexpress\.com/e/.*?/(\d{8,})',
+            # النمط الأساسي: /item/1234567890.html
+            r'/item/(\d+)\.html',
+            # نمط المنتج الطويل: /item/1005001234567890.html
+            r'/item/(\d{10,})\.html',
+            # نمط بدون .html: /item/1234567890
+            r'/item/(\d{10,})(?:\?|$)',
+            # نمط coin-index: productIds=1234567890
+            r'productIds=(\d+)',
+            # نمط تطبيق الجوال: /_m/1234567890
+            r'/_m/(\d+)',
+            # نمط المنتج البديل: /product/1234567890.html
+            r'/product/(\d+)\.html',
+            # أي رقم طويل في الرابط
+            r'/(\d{10,})(?:\.html|$)',
+            # نمط من query parameters
+            r'[?&]id=(\d+)',
         ]
         
         for pattern in patterns:
-            match = re.search(pattern, clean_link)
+            match = re.search(pattern, resolved_link)
             if match:
                 product_id = match.group(1)
-                if 8 <= len(product_id) <= 15:
-                    logger.info(f"✅ Extracted product ID: {product_id} using pattern: {pattern}")
-                    return product_id
+                print(f"✅ Extracted product ID using pattern '{pattern}': {product_id}")
+                return product_id
         
-        numbers = re.findall(r'\d{8,}', link)
+        # إذا فشلت جميع الأنماط، جرب البحث عن أي رقم طويل
+        numbers = re.findall(r'\d{9,}', resolved_link)
         if numbers:
-            for num in numbers:
-                if 8 <= len(num) <= 15:
-                    logger.info(f"✅ Extracted product ID (fallback): {num}")
-                    return num
+            # خذ أطول رقم (غالباً هو product_id)
+            product_id = max(numbers, key=len)
+            print(f"✅ Extracted product ID (longest number): {product_id}")
+            return product_id
         
-        logger.warning(f"❌ No valid product ID found in: {link}")
+        print(f"❌ Could not extract product ID from: {resolved_link}")
         return None
         
     except Exception as e:
-        logger.error(f"❌ Error extracting product ID: {e}")
+        print(f"❌ Error in extract_product_id: {e}")
         return None
 
-def generate_unique_affiliate_links(product_id, original_link):
-    """إنشاء روابط تابعة فريدة لكل نوع"""
+# Define function to generate coin-index affiliate link for 620 channel
+def generate_coin_affiliate_link(product_id):
+    """إنشاء رابط تابع باستخدام نظام coin-index للقناة 620"""
     try:
-        affiliate_pid = AFFILIATE_PID
+        # أنشئ رابط coin-index
+        coin_index_url = f"https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=syicon&productIds={product_id}"
         
-        base_url = "https://s.click.aliexpress.com/e/"
-        
-        # أكواد فريدة لكل نوع من العروض
-        links = {
-            'direct': {
-                'url': f"{base_url}_DlK9gV7_{affiliate_pid}_{product_id}",
-                'name': '🛒 الشراء المباشر',
-                'desc': 'شراء مباشر - أفضل عرض متاح'
-            },
-            'coins': {
-                'url': f"{base_url}_DdF9HAf_{affiliate_pid}_{product_id}",
-                'name': '💰 عرض العملات',
-                'desc': 'خصم إضافي باستخدام عملات AliExpress'
-            },
-            'super': {
-                'url': f"{base_url}_DmPtwSD_{affiliate_pid}_{product_id}",
-                'name': '💎 عرض السوبر',
-                'desc': 'عروض خاصة حصرية لفترة محدودة'
-            },
-            'bundle': {
-                'url': f"{base_url}_DehY1K9_{affiliate_pid}_{product_id}",
-                'name': '📦 عرض الحزمة', 
-                'desc': 'عروض مجمعة بخصومات كبيرة'
-            },
-            'flash': {
-                'url': f"{base_url}_DkXq8YJ_{affiliate_pid}_{product_id}",
-                'name': '⚡ عرض فلاش',
-                'desc': 'عروض سريعة تنتهي قريباً'
-            }
-        }
-        
-        logger.info(f"💰 Generated {len(links)} unique affiliate links")
-        return links
-        
+        # أنشئ الرابط التابع
+        affiliate_links = aliexpress.get_affiliate_links(coin_index_url)
+        if affiliate_links and len(affiliate_links) > 0:
+            return affiliate_links[0].promotion_link
+        return None
     except Exception as e:
-        logger.error(f"❌ Error generating unique links: {e}")
-        return {}
+        print(f"❌ Error generating coin affiliate link for product {product_id}: {e}")
+        return None
 
-def get_product_image(product_id):
-    """الحصول على صورة المنتج"""
+# Define function to generate bundle affiliate link for 560 channel
+def generate_bundle_affiliate_link(product_id, original_link):
+    """إنشاء رابط تابع باستخدام نظام bundle للقناة 560"""
     try:
-        # محاولة جلب صورة المنتج من AliExpress
-        image_url = f"https://ae01.alicdn.com/kf/{product_id[:2]}/{product_id}.jpg"
+        # تشفير الرابط الأصلي
+        encoded_url = urllib.parse.quote_plus(original_link)
+        # أنشئ رابط bundle
+        bundle_url = f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={encoded_url}?sourceType=560'
         
-        # التحقق من وجود الصورة
-        response = requests.head(image_url, timeout=5)
-        if response.status_code == 200:
-            logger.info(f"🖼️ Found product image: {image_url}")
-            return image_url
-        
-        # محاولة ثانية بصيغة مختلفة
-        image_url2 = f"https://ae01.alicdn.com/kf/{product_id}.jpg"
-        response2 = requests.head(image_url2, timeout=5)
-        if response2.status_code == 200:
-            logger.info(f"🖼️ Found product image: {image_url2}")
-            return image_url2
-        
-        # صور بديلة حسب نوع المنتج
-        fallback_images = {
-            'electronics': 'https://ae01.alicdn.com/kf/S1df934c441e14d3e9a4e86f3097153b3E.png',
-            'fashion': 'https://ae01.alicdn.com/kf/S1df934c441e14d3e9a4e86f3097153b3E.png',
-            'home': 'https://ae01.alicdn.com/kf/S1df934c441e14d3e9a4e86f3097153b3E.png',
-            'default': 'https://ae01.alicdn.com/kf/S1df934c441e14d3e9a4e86f3097153b3E.png'
-        }
-        
-        logger.info("🖼️ Using fallback product image")
-        return fallback_images['default']
-        
+        # أنشئ الرابط التابع
+        affiliate_links = aliexpress.get_affiliate_links(bundle_url)
+        if affiliate_links and len(affiliate_links) > 0:
+            return affiliate_links[0].promotion_link
+        return None
     except Exception as e:
-        logger.error(f"❌ Error getting product image: {e}")
-        return "https://ae01.alicdn.com/kf/S1df934c441e14d3e9a4e86f3097153b3E.png"
-
-def get_product_title_fallback(product_id):
-    """إنشاء عنوان افتراضي للمنتج"""
-    categories = [
-        "منتج إلكتروني متميز",
-        "أحدث صيحات الموضة",
-        "أدوات منزلية ذكية",
-        "جهاز تقني متطور",
-        "إكسسوارات عصرية"
-    ]
-    
-    return f"{random.choice(categories)} #{product_id}"
+        print(f"❌ Error generating bundle affiliate link for product {product_id}: {e}")
+        return None
 
 # Define bot handlers
 @bot.message_handler(commands=['start'])
 def welcome_user(message):
-    """ترحيب بالمستخدم"""
-    try:
-        logger.info(f"👋 User {message.chat.id} started the bot")
-        welcome_text = """🌐 **BotFinder - بوت العروض الحصرية**  
-
-🎯 **مرحباً بك! أنا متخصص في:**  
-• إنشاء عروض حصرية لمنتجات AliExpress  
-• توفير روابط تابعة بخصومات  
-• البحث عن أفضل العروض المتاحة  
-
-🚀 **كيفية الاستخدام:**
-1. انسخ رابط أي منتج من AliExpress
-2. أرسل الرابط هنا
-3. سأرسل لك روابط حصرية بخصومات
-
-💰 **جميع الروابط تدعم البوت وتحقق عمولة**
-⭐️ **ابدأ الآن وأرسل رابط منتج!**"""
-        
-        bot.send_message(message.chat.id, welcome_text, reply_markup=keyboardStart)
-    except Exception as e:
-        logger.error(f"❌ Start command error: {e}")
-
-@bot.message_handler(commands=['help'])
-def help_command(message):
-    """مساعدة"""
-    help_text = """🆘 **مساعدة BotFinder**
-
-📋 **الأوامر المتاحة:**
-/start - بدء البوت
-/help - هذه الرسالة
-/affiliate - معلومات الشراكة
-
-🔗 **كيفية الاستخدام:**
-أرسل رابط منتج من AliExpress وسأبحث عن أفضل العروض
-
-💰 **مميزات البوت:**
-• روابط تابعة تحقق عمولة للبوت
-• عروض حصرية بخصومات
-• دعم متواصل 24/7
-
-📝 **أمثلة للروابط الصحيحة:**
-• https://www.aliexpress.com/item/1005005123456789.html
-• https://s.click.aliexpress.com/e/_DmqR7ZV"""
-    
-    bot.send_message(message.chat.id, help_text)
-
-@bot.message_handler(commands=['affiliate'])
-def affiliate_info(message):
-    """معلومات الشراكة"""
-    affiliate_text = f"""💼 **معلومات نظام الشراكة**
-
-🔗 **معرف الشراكة الحالي:** `{AFFILIATE_PID}`
-
-💰 **كيف تعمل العمولة:**
-• كل عملية شراء عبر الروابط تحقق عمولة
-• العمولة تتراوح بين 4-12% حسب المنتج
-• يتم تحديث الأرباح بشكل دوري
-
-🎯 **لتحقيق أعلى أرباح:**
-• شارك البوت مع الأصدقاء
-• استخدم الروابط في مجموعاتك
-• شجع الآخرين على استخدام البوت
-
-📊 **لإعداد PID خاص بك:**
-1. سجل في AliExpress Affiliate
-2. احصل على PID الخاص بك
-3. أضفه في متغيرات البيئة"""
-    
-    bot.send_message(message.chat.id, affiliate_text)
+    print("Handling /start command")
+    bot.send_message(
+        message.chat.id,
+        "مرحبا بكم👋 \n" 
+        "أنا علي إكسبريس بوت أقوم بتخفيض المنتجات و البحث  عن أفضل العروض إنسخ رابط المنتج وضعه هنا 👇 ستجد جميع عروض المنتج بثمن أقل 🔥",
+        reply_markup=keyboardStart)
 
 @bot.message_handler(func=lambda message: True)
-def handle_messages(message):
-    """معالجة جميع الرسائل"""
+def echo_all(message):
     try:
-        logger.info(f"📨 Message from {message.chat.id}: {message.text[:50]}...")
-        
-        # استخراج الرابط
-        link_match = re.search(r'https?://[^\s]+', message.text)
-        if not link_match:
-            bot.send_message(message.chat.id, "❌ يرجى إرسال رابط منتج صحيح من AliExpress")
-            return
-
-        link = link_match.group()
-        
-        # التحقق من أن الرابط من AliExpress
-        if not validate_aliexpress_link(link):
-            bot.send_message(message.chat.id, "❌ هذا الرابط ليس من AliExpress. يرجى إرسال رابط منتج من AliExpress فقط")
-            return
-
-        sent_msg = bot.send_message(message.chat.id, '⏳ جاري البحث عن أفضل العروض...')
-
-        # معالجة الرابط
-        process_product_link(message, link, sent_msg.message_id)
-        
+        print(f"Message received: {message.text}")
+        link = extract_link(message.text)
+        sent_message = bot.send_message(message.chat.id, 'المرجو الانتظار قليلا، يتم تجهيز العروض ⏳')
+        message_id = sent_message.message_id
+        if link and "aliexpress.com" in link and not ("p/shoppingcart" in message.text.lower()):
+            if "availableProductShopcartIds".lower() in message.text.lower():
+                get_affiliate_shopcart_link(link, message)
+                return
+            get_affiliate_links(message, message_id, link)
+        else:
+            bot.delete_message(message.chat.id, message_id)
+            bot.send_message(message.chat.id, "الرابط غير صحيح ! تأكد من رابط المنتج أو اعد المحاولة.\n"
+                                              " قم بإرسال <b> الرابط فقط</b> بدون عنوان المنتج",
+                             parse_mode='HTML')
     except Exception as e:
-        logger.error(f"❌ Error handling message: {e}")
-        bot.send_message(message.chat.id, "❌ حدث خطأ أثناء المعالجة")
+        print(f"Error in echo_all handler: {e}")
 
-def process_product_link(message, link, message_id):
-    """معالجة رابط المنتج مع صور وروابط فريدة"""
+def extract_link(text):
+    link_pattern = r'https?://\S+|www\.\S+'
+    links = re.findall(link_pattern, text)
+    if links:
+        print(f"Extracted link: {links[0]}")
+        return links[0]
+    return None
+
+def get_affiliate_links(message, message_id, link):
     try:
-        # حل التوجيهات أولاً
-        resolved_link = resolve_redirects(link)
-        logger.info(f"🔗 Using resolved link: {resolved_link}")
-        
-        # استخراج معرف المنتج
-        product_id = extract_product_id_simple(resolved_link)
+        # حل سلسلة التوجيه أولاً
+        resolved_link = resolve_full_redirect_chain(link)
+        if not resolved_link:
+            bot.delete_message(message.chat.id, message_id)
+            bot.send_message(message.chat.id, "❌ لم أتمكن من حل الرابط! تأكد من رابط المنتج أو أعد المحاولة.")
+            return
+
+        # استخرج معرف المنتج من الرابط المحلول
+        product_id = extract_product_id(resolved_link)
         if not product_id:
             bot.delete_message(message.chat.id, message_id)
-            bot.send_message(message.chat.id, "❌ لم أتمكن من التعرف على المنتج")
+            bot.send_message(message.chat.id, f"❌ لم أتمكن من استخراج معرف المنتج من الرابط.\nالرابط: {resolved_link}")
             return
 
-        logger.info(f"🎯 Processing product: {product_id}")
+        print(f"🎯 Processing product ID: {product_id}")
 
-        # إنشاء روابط عمولة فريدة
-        affiliate_links = generate_unique_affiliate_links(product_id, resolved_link)
+        # Generate coin-index affiliate link for 620 channel
+        coin_affiliate_link = generate_coin_affiliate_link(product_id)
         
-        # الحصول على صورة المنتج
-        product_image = get_product_image(product_id)
+        # Generate bundle affiliate link for 560 channel
+        bundle_affiliate_link = generate_bundle_affiliate_link(product_id, resolved_link)
         
-        # الحصول على عنوان المنتج
-        product_title = get_product_title_fallback(product_id)
+        # Generate other affiliate links using traditional method
+        super_links = aliexpress.get_affiliate_links(
+            f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={resolved_link}?sourceType=562&aff_fcid='
+        )
+        super_links = super_links[0].promotion_link
 
-        # بناء الرسالة مع تنسيق محسن
-        message_text = f"🎁 **{product_title}**\n\n"
-        message_text += f"📦 **معرف المنتج:** `{product_id}`\n\n"
-        message_text += "🎯 **اختر أحد العروض الحصرية:**\n\n"
+        limit_links = aliexpress.get_affiliate_links(
+            f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={resolved_link}?sourceType=561&aff_fcid='
+        )
+        limit_links = limit_links[0].promotion_link
 
-        links_count = 0
-        
-        for link_type, link_info in affiliate_links.items():
-            message_text += f"**{link_info['name']}**\n"
-            message_text += f"📝 {link_info['desc']}\n"
-            message_text += f"🔗 {link_info['url']}\n\n"
-            links_count += 1
-
-        message_text += "---\n"
-        message_text += "💸 **جميع الروابط أعلاه تدعم البوت وتحقق عمولة**\n"
-        message_text += "⭐️ *شكراً لدعمك واستخدامك البوت!*"
-
-        # إرسال النتيجة مع الصورة
-        bot.delete_message(message.chat.id, message_id)
-        
         try:
-            # محاولة إرسال الصورة مع النص
-            bot.send_photo(
-                message.chat.id,
-                product_image,
-                caption=message_text,
-                reply_markup=keyboard,
-                parse_mode='Markdown'
+            # Get product details using the product ID
+            product_details = aliexpress.get_products_details([
+                product_id
+            ], fields=["target_sale_price", "product_title", "product_main_image_url"])
+            
+            if product_details and len(product_details) > 0:
+                # Print all details of product in JSON format for debugging
+                print(f"Product details object: {json.dumps(product_details[0].__dict__, indent=2, ensure_ascii=False)}")
+                price_pro = float(product_details[0].target_sale_price)
+                title_link = product_details[0].product_title
+                img_link = product_details[0].product_main_image_url
+                
+                # Convert price to MAD
+                exchange_rate = get_usd_to_mad_rate()
+                if exchange_rate:
+                    price_pro_mad = price_pro * exchange_rate
+                else:
+                    price_pro_mad = price_pro  # fallback to USD if exchange rate not available
+                
+                print(f"Product details: {title_link}, {price_pro}, {img_link}")
+                bot.delete_message(message.chat.id, message_id)
+                
+                # Build the message with all affiliate links
+                message_text = (
+                    f" \n🛒 منتجك هو : 🔥 \n"
+                    f" {title_link} 🛍 \n"
+                    f" سعر المنتج : "
+                    f" {price_pro:.2f} دولار 💵 / {price_pro_mad:.2f} درهم مغربي 💵\n"
+                    " \n قارن بين الاسعار واشتري 🔥 \n"
+                )
+                
+                # Add coin-index affiliate link for 620 channel if available
+                if coin_affiliate_link:
+                    message_text += (
+                        "💰 عرض العملات (السعر النهائي عند الدفع) : \n"
+                        f"الرابط {coin_affiliate_link} \n"
+                    )
+                
+                # Add bundle affiliate link for 560 channel if available
+                if bundle_affiliate_link:
+                    message_text += (
+                        "📦 عرض الحزمة (عروض متنوعة) : \n"
+                        f"الرابط {bundle_affiliate_link} \n"
+                    )
+                
+                message_text += (
+                    f"💎 عرض السوبر : \n"
+                    f"الرابط {super_links} \n"
+                    f"🔥 عرض محدود : \n"
+                    f"الرابط {limit_links} \n\n"
+                    "#AliExpressSaverBot ✅"
+                )
+                
+                bot.send_photo(message.chat.id,
+                               img_link,
+                               caption=message_text,
+                               reply_markup=keyboard)
+            else:
+                # Fallback if product details couldn't be fetched
+                bot.delete_message(message.chat.id, message_id)
+                
+                # Build fallback message without product details
+                message_text = "قارن بين الاسعار واشتري 🔥 \n"
+                
+                # Add coin-index affiliate link for 620 channel if available
+                if coin_affiliate_link:
+                    message_text += (
+                        "💰 عرض العملات (السعر النهائي عند الدفع) : \n"
+                        f"الرابط {coin_affiliate_link} \n"
+                    )
+                
+                # Add bundle affiliate link for 560 channel if available
+                if bundle_affiliate_link:
+                    message_text += (
+                        "📦 عرض الحزمة (عروض متنوعة) : \n"
+                        f"الرابط {bundle_affiliate_link} \n"
+                    )
+                
+                message_text += (
+                    f"💎 عرض السوبر : \n"
+                    f"الرابط {super_links} \n"
+                    f"🔥 عرض محدود : \n"
+                    f"الرابط {limit_links} \n\n"
+                    "#AliExpressSaverBot ✅"
+                )
+                
+                bot.send_message(message.chat.id, message_text, reply_markup=keyboard)
+        except Exception as e:
+            print(f"Error in get_affiliate_links inner try: {e}")
+            bot.delete_message(message.chat.id, message_id)
+            
+            # Build fallback message without product details but with all affiliate links
+            message_text = "قارن بين الاسعار واشتري 🔥 \n"
+            
+            # Add coin-index affiliate link for 620 channel if available
+            if coin_affiliate_link:
+                message_text += (
+                    "💰 عرض العملات (السعر النهائي عند الدفع) : \n"
+                    f"الرابط {coin_affiliate_link} \n"
+                )
+            
+            # Add bundle affiliate link for 560 channel if available
+            if bundle_affiliate_link:
+                message_text += (
+                    "📦 عرض الحزمة (عروض متنوعة) : \n"
+                    f"الرابط {bundle_affiliate_link} \n"
+                )
+            
+            message_text += (
+                f"💎 عرض السوبر : \n"
+                f"الرابط {super_links} \n"
+                f"🔥 عرض محدود : \n"
+                f"الرابط {limit_links} \n\n"
+                "#AliExpressSaverBot ✅"
             )
-            logger.info(f"🖼️ Sent message with product image")
-        except Exception as photo_error:
-            logger.error(f"❌ Error sending photo: {photo_error}")
-            # إذا فشل إرسال الصورة، أرسل النص فقط
-            bot.send_message(
-                message.chat.id, 
-                message_text, 
-                reply_markup=keyboard, 
-                parse_mode='Markdown',
-                disable_web_page_preview=False
-            )
-            logger.info(f"📝 Sent message without image")
-        
-        logger.info(f"💰 Sent {links_count} unique affiliate links for product {product_id}")
-
+            
+            bot.send_message(message.chat.id, message_text, reply_markup=keyboard)
     except Exception as e:
-        logger.error(f"❌ Error processing product: {e}")
-        bot.delete_message(message.chat.id, message_id)
-        bot.send_message(message.chat.id, "❌ حدث خطأ أثناء معالجة المنتج")
+        print(f"Error in get_affiliate_links: {e}")
+        bot.send_message(message.chat.id, "حدث خطأ 🤷🏻‍♂️")
+
+def build_shopcart_link(link):
+    params = get_url_params(link)
+    shop_cart_link = "https://www.aliexpress.com/p/trade/confirm.html?"
+    shop_cart_params = {
+        "availableProductShopcartIds": ",".join(params["availableProductShopcartIds"]),
+        "extraParams": json.dumps({"channelInfo": {"sourceType": "620"}}, separators=(',', ':'))
+    }
+    return create_query_string_url(link=shop_cart_link, params=shop_cart_params)
+
+def get_url_params(link):
+    parsed_url = urlparse(link)
+    params = parse_qs(parsed_url.query)
+    return params
+
+def create_query_string_url(link, params):
+    return link + urllib.parse.urlencode(params)
+
+def get_affiliate_shopcart_link(link, message):
+    try:
+        shopcart_link = build_shopcart_link(link)
+        affiliate_link = aliexpress.get_affiliate_links(shopcart_link)[0].promotion_link
+        text2 = f"هذا رابط تخفيض السلة \n{str(affiliate_link)}"
+        img_link3 = "https://i.postimg.cc/1Xrk1RJP/Copy-of-Basket-aliexpress-telegram.png"
+        bot.send_photo(message.chat.id, img_link3, caption=text2)
+    except Exception as e:
+        print(f"Error in get_affiliate_shopcart_link: {e}")
+        bot.send_message(message.chat.id, "حدث خطأ 🤷🏻‍♂️")
 
 @bot.callback_query_handler(func=lambda call: True)
-def handle_callbacks(call):
-    """معالجة الضغطات"""
+def handle_callback_query(call):
     try:
+        print(f"Callback query received: {call.data}")
         if call.data == 'click':
-            help_text = """🛒 **تخفيض سلة التسوق**
-
-لحصول على تخفيض على سلة التسوق:
-1. اذهب إلى سلة التسوق في AliExpress
-2. انسخ رابط السلة
-3. أرسل الرابط هنا
-
-📝 **رابط سلة التسوق يبدو مثل:**
-https://www.aliexpress.com/p/shoppingcart/index.html?..."""
-            
-            bot.send_message(call.message.chat.id, help_text)
+            # Replace with your link and message if needed
+            link = 'https://www.aliexpress.com/p/shoppingcart/index.html?'
+            get_affiliate_shopcart_link(link, call.message)
         else:
-            bot.answer_callback_query(call.id, "⚙️ جاري التحميل...")
+            bot.send_message(call.message.chat.id, "..")
+            img_link2 = "https://i.postimg.cc/VvmhgQ1h/Basket-aliexpress-telegram.png"
+            bot.send_photo(call.message.chat.id,
+                           img_link2,
+                           caption="روابط ألعاب جمع العملات المعدنية لإستعمالها في خفض السعر لبعض المنتجات، قم بالدخول يوميا لها للحصول على أكبر عدد ممكن في اليوم 👇",
+                           reply_markup=keyboard_games)
     except Exception as e:
-        logger.error(f"❌ Callback error: {e}")
+        print(f"Error in handle_callback_query: {e}")
 
-def main():
-    """الدالة الرئيسية"""
-    try:
-        logger.info("=" * 50)
-        logger.info("🤖 BOTFINDER AFFILIATE BOT - STARTING...")
-        logger.info("=" * 50)
-        
-        # معلومات الخادم
-        try:
-            ip = requests.get('https://api.ipify.org', timeout=10).text
-            logger.info(f"🌐 Server IP: {ip}")
-        except:
-            logger.info("🌐 Could not get server IP")
-        
-        # معلومات الشراكة
-        if AFFILIATE_PID and AFFILIATE_PID != "mm_123456789_1234567_12345678":
-            logger.info(f"💰 Using affiliate PID: {AFFILIATE_PID}")
-        else:
-            logger.warning("⚠️ Using default affiliate PID - configure AFFILIATE_PID for real earnings")
-        
-        # تنظيف الـ webhooks السابقة
-        try:
-            bot.remove_webhook()
-            logger.info("✅ Webhooks cleaned")
-        except:
-            pass
-        
-        # بدء البوت
-        logger.info("🔄 Bot is running in POLLING mode...")
-        bot.infinity_polling(
-            timeout=60,
-            long_polling_timeout=45,
-            logger_level=logging.INFO
-        )
-        
-    except Exception as e:
-        logger.error(f"❌ Bot crashed: {e}")
+# Flask app for handling webhook
+
+app = Flask(__name__)
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.method == 'POST':
+        json_str = request.get_data().decode('UTF-8')
+        update = telebot.types.Update.de_json(json_str)
+        bot.process_new_updates([update])
+        return 'OK', 200
+
+# Start Flask app in a separate thread
+def run_flask():
+    app.run(host='0.0.0.0', port=5000)
 
 if __name__ == "__main__":
-    main()
+    # Check if we're running in production (webhook) or development (polling) mode
+    webhook_url = os.getenv('WEBHOOK_URL')
+    
+    if webhook_url:
+        # Production mode: Use webhook
+        print("🚀 Starting bot in webhook mode...")
+        threading.Thread(target=run_flask).start()
+        try:
+            bot.remove_webhook()
+            bot.set_webhook(url=webhook_url)
+            print(f"✅ Webhook set to: {webhook_url}")
+        except Exception as e:
+            print(f"❌ Error setting webhook: {e}")
+    else:
+        # Development mode: Use polling
+        print("🚀 Starting bot in polling mode (development)...")
+        try:
+            # Remove any existing webhook first
+            bot.remove_webhook()
+            print("✅ Removed existing webhooks")
+            
+            # Start polling
+            print("🔄 Bot is running... Press Ctrl+C to stop.")
+            bot.infinity_polling(none_stop=True, timeout=10, long_polling_timeout=5)
+        except KeyboardInterrupt:
+            print("\n👋 Bot stopped by user.")
+        except Exception as e:
+            print(f"❌ Error in polling mode: {e}")
