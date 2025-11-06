@@ -2,3 +2,10 @@ pytelegrambotapi==4.14.0
 requests==2.31.0
 python-telegram-bot==20.7
 aiohttp==3.9.1
+pyTelegramBotAPI==4.14.0
+python-aliexpress-api==3.0.0
+Flask==3.0.2
+requests==2.31.0
+beautifulsoup4==4.12.3
+schedule
+python-dotenv==1.0.0
