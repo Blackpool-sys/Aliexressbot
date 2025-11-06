@@ -11,6 +11,8 @@ import urllib.parse
 import requests
 from dotenv import load_dotenv
 import time
+import functools
+from datetime import datetime, timedelta
 
 # Load environment variables from .env file
 load_dotenv()
@@ -72,15 +74,43 @@ btn4 = types.InlineKeyboardButton("⭐️ لعبة قلب الاوراق Flip �
 btn5 = types.InlineKeyboardButton("⭐️ لعبة GoGo Match ⭐️", url="https://s.click.aliexpress.com/e/_DDs7W5D")
 keyboard_games.add(btn1, btn2, btn3, btn4, btn5)
 
+# Simple Cache Implementation
+class SimpleCache:
+    def __init__(self, ttl=300):  # 5 دقائق
+        self.cache = {}
+        self.ttl = ttl
+    
+    def get(self, key):
+        if key in self.cache:
+            data, timestamp = self.cache[key]
+            if datetime.now() - timestamp < timedelta(seconds=self.ttl):
+                return data
+        return None
+    
+    def set(self, key, value):
+        self.cache[key] = (value, datetime.now())
+
+# Initialize caches
+product_cache = SimpleCache(ttl=600)  # 10 دقائق للمنتجات
+exchange_cache = SimpleCache(ttl=3600)  # ساعة لسعر الصرف
+
 # Define function to get exchange rate from USD to MAD
 def get_usd_to_mad_rate():
+    """الحصول على سعر صرف USD إلى MAD مع التخزين المؤقت"""
+    cached_rate = exchange_cache.get('usd_mad_rate')
+    if cached_rate:
+        return cached_rate
+    
     try:
-        response = requests.get('https://api.exchangerate-api.com/v4/latest/USD')
+        response = requests.get('https://api.exchangerate-api.com/v4/latest/USD', timeout=10)
         data = response.json()
-        return data['rates']['MAD']
+        rate = data['rates']['MAD']
+        exchange_cache.set('usd_mad_rate', rate)
+        print(f"✅ تم تحديث سعر الصرف: 1 USD = {rate} MAD")
+        return rate
     except Exception as e:
-        print(f"Error fetching exchange rate: {e}")
-        return None
+        print(f"❌ Error fetching exchange rate: {e}")
+        return 10.0  # سعر افتراضي في حالة الخطأ
 
 # Define function to resolve redirect chain and get final URL
 def resolve_full_redirect_chain(link):
@@ -116,7 +146,7 @@ def resolve_full_redirect_chain(link):
 
 # Define function to extract product ID from link
 def extract_product_id(link):
-    """استخراج معرف المنتج من روابط AliExpress المختلفة"""
+    """استخراج معرف المنتج من روابط AliExpress المختلفة - نسخة محسنة"""
     print(f"🔍 Extracting product ID from: {link}")
     
     try:
@@ -124,81 +154,187 @@ def extract_product_id(link):
         resolved_link = resolve_full_redirect_chain(link)
         print(f"🔗 Using resolved link: {resolved_link}")
         
-        # قائمة بأنماط الروابط المختلفة
+        # أنماط محسنة
         patterns = [
-            # النمط الأساسي: /item/1234567890.html
-            r'/item/(\d+)\.html',
-            # نمط المنتج الطويل: /item/1005001234567890.html
-            r'/item/(\d{10,})\.html',
-            # نمط بدون .html: /item/1234567890
-            r'/item/(\d{10,})(?:\?|$)',
-            # نمط coin-index: productIds=1234567890
-            r'productIds=(\d+)',
-            # نمط تطبيق الجوال: /_m/1234567890
-            r'/_m/(\d+)',
-            # نمط المنتج البديل: /product/1234567890.html
-            r'/product/(\d+)\.html',
-            # أي رقم طويل في الرابط
-            r'/(\d{10,})(?:\.html|$)',
-            # نمط من query parameters
-            r'[?&]id=(\d+)',
+            # النمط الأساسي المحسن
+            r'/item/(\d{8,15})\.html',
+            # نمط معلمات URL
+            r'[?&]id=(\d{8,15})',
+            # نمط تطبيق الجوال المحسن
+            r'/_m/(\d{8,15})',
+            # نمط product/
+            r'/product/(\d{8,15})',
+            # البحث عن أرقام طويلة فقط
+            r'\b(\d{8,15})\b'
         ]
         
         for pattern in patterns:
-            match = re.search(pattern, resolved_link)
-            if match:
-                product_id = match.group(1)
-                print(f"✅ Extracted product ID using pattern '{pattern}': {product_id}")
+            matches = re.findall(pattern, resolved_link)
+            if matches:
+                product_id = matches[0]
+                print(f"✅ تم استخراج ID: {product_id} بالنمط: {pattern}")
                 return product_id
         
-        # إذا فشلت جميع الأنماط، جرب البحث عن أي رقم طويل
-        numbers = re.findall(r'\d{9,}', resolved_link)
-        if numbers:
-            # خذ أطول رقم (غالباً هو product_id)
-            product_id = max(numbers, key=len)
-            print(f"✅ Extracted product ID (longest number): {product_id}")
-            return product_id
-        
-        print(f"❌ Could not extract product ID from: {resolved_link}")
+        print(f"❌ لم أستطع استخراج Product ID")
         return None
         
     except Exception as e:
         print(f"❌ Error in extract_product_id: {e}")
         return None
 
-# Define function to generate coin-index affiliate link for 620 channel
-def generate_coin_affiliate_link(product_id):
-    """إنشاء رابط تابع باستخدام نظام coin-index للقناة 620"""
+# Define function to generate affiliate links
+def generate_affiliate_links(product_id, original_link):
+    """إنشاء جميع الروابط التابعة للمنتج"""
     try:
-        # أنشئ رابط coin-index
-        coin_index_url = f"https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=syicon&productIds={product_id}"
-        
-        # أنشئ الرابط التابع
-        affiliate_links = aliexpress.get_affiliate_links(coin_index_url)
-        if affiliate_links and len(affiliate_links) > 0:
-            return affiliate_links[0].promotion_link
-        return None
+        affiliate_links = {
+            "basic": f"https://ar.aliexpress.com/item/{product_id}.html?aff_fcid={product_id}",
+            "coins": f"https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=syicon&productIds={product_id}",
+            "super": f"https://ar.aliexpress.com/item/{product_id}.html?sourceType=562&aff_fcid={product_id}",
+            "limited": f"https://ar.aliexpress.com/item/{product_id}.html?sourceType=561&aff_fcid={product_id}",
+            "bundle": f"https://ar.aliexpress.com/item/{product_id}.html?sourceType=560&aff_fcid={product_id}"
+        }
+        return affiliate_links
     except Exception as e:
-        print(f"❌ Error generating coin affiliate link for product {product_id}: {e}")
+        print(f"❌ Error generating affiliate links: {e}")
         return None
 
-# Define function to generate bundle affiliate link for 560 channel
-def generate_bundle_affiliate_link(product_id, original_link):
-    """إنشاء رابط تابع باستخدام نظام bundle للقناة 560"""
+# Define function to get enhanced product information
+def get_enhanced_product_info(product_id):
+    """الحصول على معلومات منتج محسنة مع التخزين المؤقت"""
+    # التحقق من التخزين المؤقت أولاً
+    cache_key = f"product_{product_id}"
+    cached_info = product_cache.get(cache_key)
+    if cached_info:
+        print(f"✅ Using cached product info for {product_id}")
+        return cached_info
+    
     try:
-        # تشفير الرابط الأصلي
-        encoded_url = urllib.parse.quote_plus(original_link)
-        # أنشئ رابط bundle
-        bundle_url = f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={encoded_url}?sourceType=560'
+        product_details = aliexpress.get_products_details(
+            [product_id], 
+            fields=[
+                "product_title", 
+                "target_sale_price", 
+                "product_main_image_url",
+                "target_original_price",  # السعر الأصلي
+                "evaluate_rate",          # التقييم
+                "trade_count"            # عدد المبيعات
+            ]
+        )
         
-        # أنشئ الرابط التابع
-        affiliate_links = aliexpress.get_affiliate_links(bundle_url)
-        if affiliate_links and len(affiliate_links) > 0:
-            return affiliate_links[0].promotion_link
+        if product_details and len(product_details) > 0:
+            product = product_details[0]
+            
+            # حساب التوفير
+            original_price = getattr(product, 'target_original_price', None)
+            sale_price = getattr(product, 'target_sale_price', 0)
+            discount = 0
+            if original_price and sale_price and float(original_price) > 0:
+                discount = ((float(original_price) - float(sale_price)) / float(original_price)) * 100
+            
+            product_info = {
+                'title': getattr(product, 'product_title', 'غير متوفر'),
+                'sale_price': float(sale_price) if sale_price else 0,
+                'original_price': float(original_price) if original_price else None,
+                'image': getattr(product, 'product_main_image_url', ''),
+                'rating': getattr(product, 'evaluate_rate', 'غير متوفر'),
+                'sales_count': getattr(product, 'trade_count', 'غير متوفر'),
+                'discount': round(discount, 1) if discount > 0 else None
+            }
+            
+            # تخزين في الكاش
+            product_cache.set(cache_key, product_info)
+            print(f"✅ تم جلب معلومات المنتج وتخزينها في الكاش: {product_id}")
+            return product_info
+        
         return None
     except Exception as e:
-        print(f"⚠️ Bundle links temporarily disabled - IP not whitelisted")
+        print(f"❌ Error in get_enhanced_product_info: {e}")
         return None
+
+# Define function to create product message
+def create_product_message(product_info, affiliate_links):
+    """إنشاء رسالة منتج محسنة"""
+    price_pro = product_info['sale_price']
+    exchange_rate = get_usd_to_mad_rate()
+    price_pro_mad = price_pro * exchange_rate if exchange_rate else price_pro
+    
+    message_parts = [
+        f"🛒 **{product_info['title']}** 🛍",
+        f"⭐️ التقييم: {product_info['rating']}",
+        f"🛍 المبيعات: {product_info['sales_count']}",
+        "",
+        f"💰 **السعر:**",
+        f"• ${price_pro:.2f} ≈ {price_pro_mad:.2f} درهم"
+    ]
+    
+    # إضافة السعر الأصلي والتوفير إذا متوفر
+    if product_info['original_price'] and product_info['original_price'] > price_pro:
+        original_mad = product_info['original_price'] * exchange_rate if exchange_rate else product_info['original_price']
+        message_parts.extend([
+            f"• ~~${product_info['original_price']:.2f}~~ ← **وفر {product_info['discount']}%**",
+            f"• ~~{original_mad:.2f} درهم~~"
+        ])
+    
+    message_parts.extend([
+        "",
+        "🔗 **اختر طريقة الشراء:**",
+        "",
+        f"🛒 **رابط الشراء الأساسي:**",
+        f"{affiliate_links['basic']}",
+        "",
+        f"💰 **صفحة العملات:**", 
+        f"{affiliate_links['coins']}",
+        "",
+        f"💎 **عروض خاصة:**",
+        f"• عرض السوبر: {affiliate_links['super']}",
+        f"• عرض محدود: {affiliate_links['limited']}",
+        f"• عرض الحزمة: {affiliate_links['bundle']}",
+        "",
+        "#AliExpressSaverBot 🎯"
+    ])
+    
+    return "\n".join(message_parts)
+
+# Define function to analyze link type
+def analyze_link_type(link):
+    """تحليل نوع الرابط"""
+    if 'shoppingcart' in link.lower():
+        return 'shopcart'
+    elif 'coin' in link.lower():
+        return 'coin'
+    elif 'game' in link.lower() or any(game in link.lower() for game in ['merge', 'farm', 'flip', 'gogo']):
+        return 'game'
+    elif 'item' in link.lower() or 'product' in link.lower():
+        return 'product'
+    else:
+        return 'unknown'
+
+# Define function to safely delete messages
+def safe_delete_message(bot, chat_id, message_id):
+    """حذف آمن للرسائل"""
+    try:
+        bot.delete_message(chat_id, message_id)
+        return True
+    except Exception as e:
+        print(f"⚠️ لا يمكن حذف الرسالة {message_id}: {e}")
+        return False
+
+# Define function to send error messages
+def send_error_message(bot, chat_id, error_type, original_link=None):
+    """إرسال رسائل خطأ مخصصة"""
+    error_messages = {
+        'invalid_link': "❌ الرابط غير صحيح! تأكد من رابط المنتج.",
+        'no_product_id': "❌ لم أستطع تحديد المنتج. حاول برابط مختلف.",
+        'api_error': "⚠️ حدث خطأ في الخدمة. حاول مرة أخرى.",
+        'timeout': "⏰ انتهت المهلة. حاول مرة أخرى.",
+        'general': "❌ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى."
+    }
+    
+    message = error_messages.get(error_type, "حدث خطأ غير متوقع")
+    if original_link:
+        message += f"\nالرابط: {original_link[:100]}..."
+    
+    bot.send_message(chat_id, message)
 
 # Define bot handlers
 @bot.message_handler(commands=['start'])
@@ -213,149 +349,124 @@ def welcome_user(message):
 @bot.message_handler(func=lambda message: True)
 def echo_all(message):
     try:
-        print(f"Message received: {message.text}")
+        print(f"📩 Message received: {message.text}")
         link = extract_link(message.text)
-        sent_message = bot.send_message(message.chat.id, 'المرجو الانتظار قليلا، يتم تجهيز العروض ⏳')
+        
+        if not link:
+            bot.send_message(message.chat.id, "❌ لم أتمكن من العثور على رابط في رسالتك.")
+            return
+            
+        # تحليل نوع الرابط
+        link_type = analyze_link_type(link)
+        print(f"🔍 Link type: {link_type}")
+        
+        sent_message = bot.send_message(message.chat.id, '⏳ المرجو الانتظار قليلا، يتم تجهيز العروض...')
         message_id = sent_message.message_id
-        if link and "aliexpress.com" in link and not ("p/shoppingcart" in message.text.lower()):
-            if "availableProductShopcartIds".lower() in message.text.lower():
-                get_affiliate_shopcart_link(link, message)
-                return
+        
+        if link_type == 'shopcart':
+            get_affiliate_shopcart_link(link, message, message_id)
+        elif link_type == 'product':
             get_affiliate_links(message, message_id, link)
+        elif link_type == 'game':
+            handle_game_link(message, message_id)
         else:
-            try:
-                bot.delete_message(message.chat.id, message_id)
-            except:
-                pass  # تجاهل الخطأ إذا الرسالة غير موجودة
-            bot.send_message(message.chat.id, "الرابط غير صحيح ! تأكد من رابط المنتج أو اعد المحاولة.\n"
-                                              " قم بإرسال <b> الرابط فقط</b> بدون عنوان المنتج",
-                             parse_mode='HTML')
+            safe_delete_message(bot, message.chat.id, message_id)
+            send_error_message(bot, message.chat.id, 'invalid_link', link)
+            
     except Exception as e:
-        print(f"Error in echo_all handler: {e}")
+        print(f"❌ Error in echo_all handler: {e}")
+        send_error_message(bot, message.chat.id, 'general')
 
 def extract_link(text):
-    link_pattern = r'https?://\S+|www\.\S+'
+    """استخراج الروابط من النص"""
+    link_pattern = r'https?://[^\s]+|www\.[^\s]+'
     links = re.findall(link_pattern, text)
     if links:
-        print(f"Extracted link: {links[0]}")
+        print(f"🔗 Extracted link: {links[0]}")
         return links[0]
     return None
 
 def get_affiliate_links(message, message_id, link):
+    """معالجة روابط المنتجات"""
     try:
         # حل سلسلة التوجيه أولاً
         resolved_link = resolve_full_redirect_chain(link)
         if not resolved_link:
-            try:
-                bot.delete_message(message.chat.id, message_id)
-            except:
-                pass
-            bot.send_message(message.chat.id, "❌ لم أتمكن من حل الرابط! تأكد من رابط المنتج أو أعد المحاولة.")
+            safe_delete_message(bot, message.chat.id, message_id)
+            send_error_message(bot, message.chat.id, 'invalid_link', link)
             return
 
         # استخرج معرف المنتج من الرابط المحلول
         product_id = extract_product_id(resolved_link)
         if not product_id:
-            try:
-                bot.delete_message(message.chat.id, message_id)
-            except:
-                pass
-            bot.send_message(message.chat.id, f"❌ لم أتمكن من استخراج معرف المنتج من الرابط.\nالرابط: {resolved_link}")
+            safe_delete_message(bot, message.chat.id, message_id)
+            send_error_message(bot, message.chat.id, 'no_product_id', resolved_link)
             return
 
         print(f"🎯 Processing product ID: {product_id}")
 
-        # إنشاء روابط تابعة مباشرة (بدون استخدام API)
-        affiliate_links = {
-            "🛒 رابط الشراء الأساسي": f"https://ar.aliexpress.com/item/{product_id}.html?aff_fcid={product_id}",
-            "💰 صفحة العملات": f"https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=syicon&productIds={product_id}",
-            "💎 عرض السوبر": f"https://ar.aliexpress.com/item/{product_id}.html?sourceType=562&aff_fcid={product_id}",
-            "🔥 عرض محدود": f"https://ar.aliexpress.com/item/{product_id}.html?sourceType=561&aff_fcid={product_id}",
-            "📦 عرض الحزمة": f"https://ar.aliexpress.com/item/{product_id}.html?sourceType=560&aff_fcid={product_id}"
-        }
+        # إنشاء روابط تابعة
+        affiliate_links = generate_affiliate_links(product_id, resolved_link)
+        if not affiliate_links:
+            safe_delete_message(bot, message.chat.id, message_id)
+            send_error_message(bot, message.chat.id, 'api_error')
+            return
 
-        try:
-            # Get product details using the product ID
-            product_details = aliexpress.get_products_details([
-                product_id
-            ], fields=["target_sale_price", "product_title", "product_main_image_url"])
-            
-            if product_details and len(product_details) > 0:
-                price_pro = float(product_details[0].target_sale_price)
-                title_link = product_details[0].product_title
-                img_link = product_details[0].product_main_image_url
-                
-                # Convert price to MAD
-                exchange_rate = get_usd_to_mad_rate()
-                if exchange_rate:
-                    price_pro_mad = price_pro * exchange_rate
-                else:
-                    price_pro_mad = price_pro
-                
-                print(f"Product details: {title_link}, {price_pro}, {img_link}")
-                
-                # حاول حذف الرسالة، إذا فشل استمر
-                try:
-                    bot.delete_message(message.chat.id, message_id)
-                except:
-                    print("⚠️ Could not delete message - continuing anyway")
-                
-                # Build the message with all affiliate links - بدون Markdown
-                message_text = (
-                    f"🛒 {title_link} 🛍\n"
-                    f"💰 السعر: {price_pro:.2f}$ / {price_pro_mad:.2f} درهم\n\n"
-                    f"🔗 اختر طريقة الشراء:\n"
-                )
-                
-                # إضافة جميع الروابط
-                for link_name, link_url in affiliate_links.items():
-                    message_text += f"\n{link_name}:\n{link_url}\n"
-                
-                message_text += "\n#AliExpressSaverBot ✅"
-                
-                bot.send_photo(message.chat.id,
-                               img_link,
-                               caption=message_text,
-                               reply_markup=keyboard)  # حذف parse_mode
-            else:
-                # Fallback if product details couldn't be fetched
-                try:
-                    bot.delete_message(message.chat.id, message_id)
-                except:
-                    print("⚠️ Could not delete message - continuing anyway")
-                
-                message_text = "🔗 اختر طريقة الشراء:\n"
-                
-                for link_name, link_url in affiliate_links.items():
-                    message_text += f"\n{link_name}:\n{link_url}\n"
-                
-                message_text += "\n#AliExpressSaverBot ✅"
-                
-                bot.send_message(message.chat.id, message_text, reply_markup=keyboard)
-                
-        except Exception as e:
-            print(f"Error in get_affiliate_links inner try: {e}")
-            
-            try:
-                bot.delete_message(message.chat.id, message_id)
-            except:
-                print("⚠️ Could not delete message - continuing anyway")
-            
-            # Fallback with just links
-            message_text = "🔗 اختر طريقة الشراء:\n"
-            
-            for link_name, link_url in affiliate_links.items():
-                message_text += f"\n{link_name}:\n{link_url}\n"
-            
-            message_text += "\n#AliExpressSaverBot ✅"
-            
-            bot.send_message(message.chat.id, message_text, reply_markup=keyboard)
+        # الحصول على معلومات المنتج
+        product_info = get_enhanced_product_info(product_id)
+        
+        safe_delete_message(bot, message.chat.id, message_id)
+        
+        if product_info and product_info.get('image'):
+            # إرسال الصورة مع التفاصيل
+            message_text = create_product_message(product_info, affiliate_links)
+            bot.send_photo(
+                message.chat.id,
+                product_info['image'],
+                caption=message_text,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+        else:
+            # Fallback إذا لم تكن هناك معلومات منتج
+            message_text = (
+                f"🔗 **اختر طريقة الشراء:**\n\n"
+                f"🛒 **رابط الشراء الأساسي:**\n{affiliate_links['basic']}\n\n"
+                f"💰 **صفحة العملات:**\n{affiliate_links['coins']}\n\n"
+                f"💎 **عروض خاصة:**\n"
+                f"• عرض السوبر: {affiliate_links['super']}\n"
+                f"• عرض محدود: {affiliate_links['limited']}\n"
+                f"• عرض الحزمة: {affiliate_links['bundle']}\n\n"
+                f"#AliExpressSaverBot 🎯"
+            )
+            bot.send_message(
+                message.chat.id,
+                message_text,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
             
     except Exception as e:
-        print(f"Error in get_affiliate_links: {e}")
-        bot.send_message(message.chat.id, "حدث خطأ 🤷🏻‍♂️")
+        print(f"❌ Error in get_affiliate_links: {e}")
+        safe_delete_message(bot, message.chat.id, message_id)
+        send_error_message(bot, message.chat.id, 'general')
+
+def handle_game_link(message, message_id):
+    """معالجة روابط الألعاب"""
+    safe_delete_message(bot, message.chat.id, message_id)
+    img_link2 = "https://i.postimg.cc/VvmhgQ1h/Basket-aliexpress-telegram.png"
+    bot.send_photo(
+        message.chat.id,
+        img_link2,
+        caption="🎮 **روابط ألعاب جمع العملات المعدنية**\n\n"
+                "استعمل هذه الألعاب يومياً لجمع أكبر عدد ممكن من العملات\n"
+                "ثم استخدمها في خفض أسعار المنتجات في سلة التسوق 👇",
+        reply_markup=keyboard_games,
+        parse_mode='Markdown'
+    )
 
 def build_shopcart_link(link):
+    """بناء رابط سلة التسوق"""
     params = get_url_params(link)
     shop_cart_link = "https://www.aliexpress.com/p/trade/confirm.html?"
     shop_cart_params = {
@@ -365,43 +476,63 @@ def build_shopcart_link(link):
     return create_query_string_url(link=shop_cart_link, params=shop_cart_params)
 
 def get_url_params(link):
+    """استخراج معلمات URL"""
     parsed_url = urlparse(link)
     params = parse_qs(parsed_url.query)
     return params
 
 def create_query_string_url(link, params):
-    return link + urllib.parse.urlencode(params)
+    """إنشاء رابط مع معلمات query"""
+    return link + urllib.parse.urlencode(params, doseq=True)
 
-def get_affiliate_shopcart_link(link, message):
+def get_affiliate_shopcart_link(link, message, message_id):
+    """معالجة روابط سلة التسوق"""
     try:
         shopcart_link = build_shopcart_link(link)
-        affiliate_link = aliexpress.get_affiliate_links(shopcart_link)[0].promotion_link
-        text2 = f"هذا رابط تخفيض السلة \n{str(affiliate_link)}"
-        img_link3 = "https://i.postimg.cc/1Xrk1RJP/Copy-of-Basket-aliexpress-telegram.png"
-        bot.send_photo(message.chat.id, img_link3, caption=text2)
+        affiliate_links = aliexpress.get_affiliate_links(shopcart_link)
+        
+        if affiliate_links and len(affiliate_links) > 0:
+            affiliate_link = affiliate_links[0].promotion_link
+            safe_delete_message(bot, message.chat.id, message_id)
+            
+            text2 = (
+                "🛒 **رابط تخفيض سلة التسوق**\n\n"
+                f"{affiliate_link}\n\n"
+                "⚠️ **ملاحظة:** استخدم هذا الرابط للاستفادة من التخفيضات على منتجات سلة التسوق"
+            )
+            img_link3 = "https://i.postimg.cc/1Xrk1RJP/Copy-of-Basket-aliexpress-telegram.png"
+            
+            bot.send_photo(
+                message.chat.id, 
+                img_link3, 
+                caption=text2,
+                parse_mode='Markdown'
+            )
+        else:
+            safe_delete_message(bot, message.chat.id, message_id)
+            send_error_message(bot, message.chat.id, 'api_error')
+            
     except Exception as e:
-        print(f"Error in get_affiliate_shopcart_link: {e}")
-        bot.send_message(message.chat.id, "حدث خطأ 🤷🏻‍♂️")
+        print(f"❌ Error in get_affiliate_shopcart_link: {e}")
+        safe_delete_message(bot, message.chat.id, message_id)
+        send_error_message(bot, message.chat.id, 'general')
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
     try:
-        print(f"Callback query received: {call.data}")
+        print(f"🔘 Callback query received: {call.data}")
         if call.data == 'click':
-            # Replace with your link and message if needed
             link = 'https://www.aliexpress.com/p/shoppingcart/index.html?'
-            get_affiliate_shopcart_link(link, call.message)
+            sent_message = bot.send_message(call.message.chat.id, '⏳ جاري تجهيز رابط سلة التسوق...')
+            get_affiliate_shopcart_link(link, call.message, sent_message.message_id)
         else:
-            bot.send_message(call.message.chat.id, "..")
-            img_link2 = "https://i.postimg.cc/VvmhgQ1h/Basket-aliexpress-telegram.png"
-            bot.send_photo(call.message.chat.id,
-                           img_link2,
-                           caption="روابط ألعاب جمع العملات المعدنية لإستعمالها في خفض السعر لبعض المنتجات، قم بالدخول يوميا لها للحصول على أكبر عدد ممكن في اليوم 👇",
-                           reply_markup=keyboard_games)
+            bot.answer_callback_query(call.id, "⚠️ الأمر غير معروف")
+            
     except Exception as e:
-        print(f"Error in handle_callback_query: {e}")
+        print(f"❌ Error in handle_callback_query: {e}")
+        bot.answer_callback_query(call.id, "❌ حدث خطأ في المعالجة")
 
-# Flask app for handling webhook
+# Flask app for handling webhook (للحفاظ على التوافقية)
 app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
@@ -411,6 +542,10 @@ def webhook():
         update = telebot.types.Update.de_json(json_str)
         bot.process_new_updates([update])
         return 'OK', 200
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    return {'status': 'healthy', 'timestamp': datetime.now().isoformat()}, 200
 
 if __name__ == "__main__":
     # استخدم POLLING مباشرة - لا حاجة لـ Webhook
