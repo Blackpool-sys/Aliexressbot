@@ -10,7 +10,7 @@ from urllib.parse import urlparse, parse_qs
 import urllib.parse
 import requests
 from dotenv import load_dotenv
-import time  # أضفنا هذا
+import time
 
 # Load environment variables from .env file
 load_dotenv()
@@ -225,7 +225,7 @@ def echo_all(message):
         else:
             bot.delete_message(message.chat.id, message_id)
             bot.send_message(message.chat.id, "الرابط غير صحيح ! تأكد من رابط المنتج أو اعد المحاولة.\n"
-                                              " قم بإرسal <b> الرابط فقط</b> بدون عنوان المنتج",
+                                              " قم بإرسال <b> الرابط فقط</b> بدون عنوان المنتج",
                              parse_mode='HTML')
     except Exception as e:
         print(f"Error in echo_all handler: {e}")
@@ -256,28 +256,14 @@ def get_affiliate_links(message, message_id, link):
 
         print(f"🎯 Processing product ID: {product_id}")
 
-        # Generate coin-index affiliate link for 620 channel
-        coin_affiliate_link = generate_coin_affiliate_link(product_id)
-        
-        # Generate bundle affiliate link for 560 channel
-        bundle_affiliate_link = generate_bundle_affiliate_link(product_id, resolved_link)
-        
-        # Generate other affiliate links using traditional method
-        try:
-            super_links = aliexpress.get_affiliate_links(
-                f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={resolved_link}?sourceType=562&aff_fcid='
-            )
-            super_links = super_links[0].promotion_link
-        except:
-            super_links = "⚠️ غير متوفر حالياً"
-
-        try:
-            limit_links = aliexpress.get_affiliate_links(
-                f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={resolved_link}?sourceType=561&aff_fcid='
-            )
-            limit_links = limit_links[0].promotion_link
-        except:
-            limit_links = "⚠️ غير متوفر حالياً"
+        # إنشاء روابط تابعة مباشرة (بدون استخدام API)
+        affiliate_links = {
+            "🛒 رابط الشراء الأساسي": f"https://ar.aliexpress.com/item/{product_id}.html?aff_fcid={product_id}",
+            "💰 صفحة العملات": f"https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=syicon&productIds={product_id}",
+            "💎 عرض السوبر": f"https://ar.aliexpress.com/item/{product_id}.html?sourceType=562&aff_fcid={product_id}",
+            "🔥 عرض محدود": f"https://ar.aliexpress.com/item/{product_id}.html?sourceType=561&aff_fcid={product_id}",
+            "📦 عرض الحزمة": f"https://ar.aliexpress.com/item/{product_id}.html?sourceType=560&aff_fcid={product_id}"
+        }
 
         try:
             # Get product details using the product ID
@@ -286,8 +272,6 @@ def get_affiliate_links(message, message_id, link):
             ], fields=["target_sale_price", "product_title", "product_main_image_url"])
             
             if product_details and len(product_details) > 0:
-                # Print all details of product in JSON format for debugging
-                print(f"Product details object: {json.dumps(product_details[0].__dict__, indent=2, ensure_ascii=False)}")
                 price_pro = float(product_details[0].target_sale_price)
                 title_link = product_details[0].product_title
                 img_link = product_details[0].product_main_image_url
@@ -297,106 +281,56 @@ def get_affiliate_links(message, message_id, link):
                 if exchange_rate:
                     price_pro_mad = price_pro * exchange_rate
                 else:
-                    price_pro_mad = price_pro  # fallback to USD if exchange rate not available
+                    price_pro_mad = price_pro
                 
                 print(f"Product details: {title_link}, {price_pro}, {img_link}")
                 bot.delete_message(message.chat.id, message_id)
                 
                 # Build the message with all affiliate links
                 message_text = (
-                    f" \n🛒 منتجك هو : 🔥 \n"
-                    f" {title_link} 🛍 \n"
-                    f" سعر المنتج : "
-                    f" {price_pro:.2f} دولار 💵 / {price_pro_mad:.2f} درهم مغربي 💵\n"
-                    " \n قارن بين الاسعار واشتري 🔥 \n"
+                    f"🛒 **{title_link}** 🛍\n"
+                    f"💰 السعر: {price_pro:.2f}$ / {price_pro_mad:.2f} درهم\n\n"
+                    f"🔗 **اختر طريقة الشراء:**\n"
                 )
                 
-                # Add coin-index affiliate link for 620 channel if available
-                if coin_affiliate_link:
-                    message_text += (
-                        "💰 عرض العملات (السعر النهائي عند الدفع) : \n"
-                        f"الرابط {coin_affiliate_link} \n"
-                    )
+                # إضافة جميع الروابط
+                for link_name, link_url in affiliate_links.items():
+                    message_text += f"\n{link_name}:\n{link_url}\n"
                 
-                # Add bundle affiliate link for 560 channel if available
-                if bundle_affiliate_link:
-                    message_text += (
-                        "📦 عرض الحزمة (عروض متنوعة) : \n"
-                        f"الرابط {bundle_affiliate_link} \n"
-                    )
-                
-                message_text += (
-                    f"💎 عرض السوبر : \n"
-                    f"الرابط {super_links} \n"
-                    f"🔥 عرض محدود : \n"
-                    f"الرابط {limit_links} \n\n"
-                    "#AliExpressSaverBot ✅"
-                )
+                message_text += "\n#AliExpressSaverBot ✅"
                 
                 bot.send_photo(message.chat.id,
                                img_link,
                                caption=message_text,
-                               reply_markup=keyboard)
+                               reply_markup=keyboard,
+                               parse_mode='Markdown')
             else:
                 # Fallback if product details couldn't be fetched
                 bot.delete_message(message.chat.id, message_id)
                 
-                # Build fallback message without product details
-                message_text = "قارن بين الاسعار واشتري 🔥 \n"
+                message_text = "🔗 **اختر طريقة الشراء:**\n"
                 
-                # Add coin-index affiliate link for 620 channel if available
-                if coin_affiliate_link:
-                    message_text += (
-                        "💰 عرض العملات (السعر النهائي عند الدفع) : \n"
-                        f"الرابط {coin_affiliate_link} \n"
-                    )
+                for link_name, link_url in affiliate_links.items():
+                    message_text += f"\n{link_name}:\n{link_url}\n"
                 
-                # Add bundle affiliate link for 560 channel if available
-                if bundle_affiliate_link:
-                    message_text += (
-                        "📦 عرض الحزمة (عروض متنوعة) : \n"
-                        f"الرابط {bundle_affiliate_link} \n"
-                    )
+                message_text += "\n#AliExpressSaverBot ✅"
                 
-                message_text += (
-                    f"💎 عرض السوبر : \n"
-                    f"الرابط {super_links} \n"
-                    f"🔥 عرض محدود : \n"
-                    f"الرابط {limit_links} \n\n"
-                    "#AliExpressSaverBot ✅"
-                )
+                bot.send_message(message.chat.id, message_text, reply_markup=keyboard, parse_mode='Markdown')
                 
-                bot.send_message(message.chat.id, message_text, reply_markup=keyboard)
         except Exception as e:
             print(f"Error in get_affiliate_links inner try: {e}")
             bot.delete_message(message.chat.id, message_id)
             
-            # Build fallback message without product details but with all affiliate links
-            message_text = "قارن بين الاسعار واشتري 🔥 \n"
+            # Fallback with just links
+            message_text = "🔗 **اختر طريقة الشراء:**\n"
             
-            # Add coin-index affiliate link for 620 channel if available
-            if coin_affiliate_link:
-                message_text += (
-                    "💰 عرض العملات (السعر النهائي عند الدفع) : \n"
-                    f"الرابط {coin_affiliate_link} \n"
-                )
+            for link_name, link_url in affiliate_links.items():
+                message_text += f"\n{link_name}:\n{link_url}\n"
             
-            # Add bundle affiliate link for 560 channel if available
-            if bundle_affiliate_link:
-                message_text += (
-                    "📦 عرض الحزمة (عروض متنوعة) : \n"
-                    f"الرابط {bundle_affiliate_link} \n"
-                )
+            message_text += "\n#AliExpressSaverBot ✅"
             
-            message_text += (
-                f"💎 عرض السوبر : \n"
-                f"الرابط {super_links} \n"
-                f"🔥 عرض محدود : \n"
-                f"الرابط {limit_links} \n\n"
-                "#AliExpressSaverBot ✅"
-            )
+            bot.send_message(message.chat.id, message_text, reply_markup=keyboard, parse_mode='Markdown')
             
-            bot.send_message(message.chat.id, message_text, reply_markup=keyboard)
     except Exception as e:
         print(f"Error in get_affiliate_links: {e}")
         bot.send_message(message.chat.id, "حدث خطأ 🤷🏻‍♂️")
@@ -448,7 +382,6 @@ def handle_callback_query(call):
         print(f"Error in handle_callback_query: {e}")
 
 # Flask app for handling webhook
-
 app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
