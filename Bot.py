@@ -10,6 +10,7 @@ from urllib.parse import urlparse, parse_qs
 import urllib.parse
 import requests
 from dotenv import load_dotenv
+import time  # أضفنا هذا
 
 # Load environment variables from .env file
 load_dotenv()
@@ -31,6 +32,14 @@ if not ALIEXPRESS_API_PUBLIC or not ALIEXPRESS_API_SECRET:
     exit(1)
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN_BOT)
+
+# عرض IP الخادم فور التشغيل
+try:
+    ip = requests.get('https://api.ipify.org', timeout=5).text
+    print(f"🎯🎯🎯 RAILWAY SERVER IP: {ip} 🎯🎯🎯")
+    print(f"🎯 ADD THIS IP TO ALIEXPRESS WHITELIST: {ip}")
+except Exception as e:
+    print(f"❌ Could not get server IP: {e}")
 
 # Initialize Aliexpress API
 try:
@@ -188,7 +197,7 @@ def generate_bundle_affiliate_link(product_id, original_link):
             return affiliate_links[0].promotion_link
         return None
     except Exception as e:
-        print(f"❌ Error generating bundle affiliate link for product {product_id}: {e}")
+        print(f"⚠️ Bundle links temporarily disabled - IP not whitelisted")
         return None
 
 # Define bot handlers
@@ -216,7 +225,7 @@ def echo_all(message):
         else:
             bot.delete_message(message.chat.id, message_id)
             bot.send_message(message.chat.id, "الرابط غير صحيح ! تأكد من رابط المنتج أو اعد المحاولة.\n"
-                                              " قم بإرسال <b> الرابط فقط</b> بدون عنوان المنتج",
+                                              " قم بإرسal <b> الرابط فقط</b> بدون عنوان المنتج",
                              parse_mode='HTML')
     except Exception as e:
         print(f"Error in echo_all handler: {e}")
@@ -254,15 +263,21 @@ def get_affiliate_links(message, message_id, link):
         bundle_affiliate_link = generate_bundle_affiliate_link(product_id, resolved_link)
         
         # Generate other affiliate links using traditional method
-        super_links = aliexpress.get_affiliate_links(
-            f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={resolved_link}?sourceType=562&aff_fcid='
-        )
-        super_links = super_links[0].promotion_link
+        try:
+            super_links = aliexpress.get_affiliate_links(
+                f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={resolved_link}?sourceType=562&aff_fcid='
+            )
+            super_links = super_links[0].promotion_link
+        except:
+            super_links = "⚠️ غير متوفر حالياً"
 
-        limit_links = aliexpress.get_affiliate_links(
-            f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={resolved_link}?sourceType=561&aff_fcid='
-        )
-        limit_links = limit_links[0].promotion_link
+        try:
+            limit_links = aliexpress.get_affiliate_links(
+                f'https://star.aliexpress.com/share/share.htm?platform=AE&businessType=ProductDetail&redirectUrl={resolved_link}?sourceType=561&aff_fcid='
+            )
+            limit_links = limit_links[0].promotion_link
+        except:
+            limit_links = "⚠️ غير متوفر حالياً"
 
         try:
             # Get product details using the product ID
@@ -444,36 +459,26 @@ def webhook():
         bot.process_new_updates([update])
         return 'OK', 200
 
-# Start Flask app in a separate thread
-def run_flask():
-    app.run(host='0.0.0.0', port=5000)
-
 if __name__ == "__main__":
-    # Check if we're running in production (webhook) or development (polling) mode
-    webhook_url = os.getenv('WEBHOOK_URL')
+    # استخدم POLLING مباشرة - لا حاجة لـ Webhook
+    print("🚀 Starting bot in POLLING mode...")
     
-    if webhook_url:
-        # Production mode: Use webhook
-        print("🚀 Starting bot in webhook mode...")
-        threading.Thread(target=run_flask).start()
-        try:
-            bot.remove_webhook()
-            bot.set_webhook(url=webhook_url)
-            print(f"✅ Webhook set to: {webhook_url}")
-        except Exception as e:
-            print(f"❌ Error setting webhook: {e}")
-    else:
-        # Development mode: Use polling
-        print("🚀 Starting bot in polling mode (development)...")
-        try:
-            # Remove any existing webhook first
-            bot.remove_webhook()
-            print("✅ Removed existing webhooks")
-            
-            # Start polling
-            print("🔄 Bot is running... Press Ctrl+C to stop.")
-            bot.infinity_polling(none_stop=True, timeout=10, long_polling_timeout=5)
-        except KeyboardInterrupt:
-            print("\n👋 Bot stopped by user.")
-        except Exception as e:
-            print(f"❌ Error in polling mode: {e}")
+    # تأكد من إزالة أي Webhook سابق
+    try:
+        bot.remove_webhook()
+        print("✅ Cleaned any existing webhooks")
+    except Exception as e:
+        print(f"⚠️ Error removing webhook: {e}")
+    
+    # ابدأ Polling مباشرة
+    print("🔄 Bot is running and waiting for messages...")
+    
+    try:
+        bot.infinity_polling(
+            none_stop=True,
+            timeout=60,
+            long_polling_timeout=45,
+            skip_pending=True
+        )
+    except Exception as e:
+        print(f"❌ Polling error: {e}")
