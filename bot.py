@@ -82,7 +82,7 @@ except Exception as e:
 keyboardStart = types.InlineKeyboardMarkup(row_width=1)
 btn1 = types.InlineKeyboardButton("⭐️ صفحة مراجعة وجمع النقاط يوميا ⭐️", url="https://s.click.aliexpress.com/e/_DdwUZVd")
 btn2 = types.InlineKeyboardButton("⭐️تخفيض العملات على منتجات السلة 🛒⭐️", callback_data='click')
-btn3 = types.InlineKeyboardButton("❤️ اشترك في القناة للمزيد من العروض ❤️", url="https://t.me/AliexpresSuperrDeals")
+btn3 = types.InlineKeyboardButton("❤️ اشترك في القناة للمزيد من العروض ❤️", url="https://t.me/ShopAliExpressMaroc")
 btn4 = types.InlineKeyboardButton("🎬 شاهد كيفية عمل البوت 🎬", url="https://t.me/ShopAliExpressMaroc/9")
 btn5 = types.InlineKeyboardButton("💰 حمل تطبيق Aliexpress عبر الضغط هنا للحصول على مكافأة 5 دولار 💰", url="https://a.aliexpress.com/_mtV0j3q")
 keyboardStart.add(btn1, btn2, btn3, btn4)
@@ -101,15 +101,16 @@ btn4 = types.InlineKeyboardButton("⭐️ لعبة قلب الاوراق Flip �
 btn5 = types.InlineKeyboardButton("⭐️ لعبة GoGo Match ⭐️", url="https://s.click.aliexpress.com/e/_DDs7W5D")
 keyboard_games.add(btn1, btn2, btn3, btn4, btn5)
 
-# Define function to get exchange rate from USD to MAD
-def get_usd_to_mad_rate():
+# Define function to get exchange rate from USD to DZD (الدينار الجزائري)
+def get_usd_to_dzd_rate():
     try:
         response = requests.get('https://api.exchangerate-api.com/v4/latest/USD')
         data = response.json()
-        return data['rates']['MAD']
+        return data['rates']['DZD']
     except Exception as e:
         print(f"Error fetching exchange rate: {e}")
-        return None
+        # سعر صرف افتراضي إذا فشل الاتصال بالAPI
+        return 134.5  # سعر صرف تقريبي للدولار مقابل الدينار الجزائري
 
 # Define function to resolve redirect chain and get final URL
 def resolve_full_redirect_chain(link):
@@ -229,6 +230,35 @@ def generate_bundle_affiliate_link(product_id, original_link):
         print(f"❌ Error generating bundle affiliate link for product {product_id}: {e}")
         return None
 
+# دالة لإرسال الصورة مع الرسالة الترحيبية
+def send_welcome_with_photo(chat_id, message_text, photo_url=None, reply_markup=None):
+    """إرسال رسالة ترحيبية مع صورة"""
+    try:
+        if photo_url:
+            bot.send_photo(
+                chat_id,
+                photo_url,
+                caption=message_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        else:
+            bot.send_message(
+                chat_id,
+                message_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+    except Exception as e:
+        print(f"Error sending welcome message with photo: {e}")
+        # Fallback إلى رسالة نصية إذا فشل إرسال الصورة
+        bot.send_message(
+            chat_id,
+            message_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+
 # معالج للأوامر فقط
 @bot.message_handler(commands=['start', 'help'])
 def welcome_user(message):
@@ -259,11 +289,14 @@ def welcome_user(message):
 
 🚀 **لتبدأ، اختر أحد الخيارات أدناه أو أرسل لي رابط منتج!**"""
     
-    bot.send_message(
+    # رابط الصورة لأمر /start
+    start_photo_url = "https://i.postimg.cc/XYz123Ab/welcome-bot.jpg"  # غير هذا الرابط إلى الصورة التي تريدها
+    
+    send_welcome_with_photo(
         message.chat.id,
         welcome_message,
-        reply_markup=keyboardStart,
-        parse_mode='Markdown'
+        photo_url=start_photo_url,
+        reply_markup=keyboardStart
     )
 
 @bot.message_handler(commands=['ip'])
@@ -276,7 +309,7 @@ def show_ip(message):
         parse_mode='Markdown'
     )
 
-# معالج للرسائل الأولى فقط (عند بدء المحادثة لأول مرة)
+# معالج لجميع الرسائل النصية
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def handle_all_messages(message):
     # إذا كانت الرسالة تحتوي على رابط AliExpress، معالجتها كرابط
@@ -285,37 +318,84 @@ def handle_all_messages(message):
         echo_all(message)
         return
     
-    # إذا كانت الرسالة نصية عادية ولا تبدأ ب / 
+    # إذا كانت الرسالة نصية عادية ولا تبدأ بـ / 
     if message.text and not message.text.startswith('/'):
-        # تحقق إذا كانت الرسالة الأولى للمستخدم
-        # نستخدم رسالة ترحيبية مبسطة للمستخدمين الجدد
-        welcome_first_message = """🎉 **أهلاً وسهلاً! يبدو أنك جديد هنا** 
+        # عرض رسالة الترحيب الأولى المشابهة للصورة
+        welcome_first_message = """
+🔍 **مرحلة: ماذا يمكن لهذا البوت أن يفعل؟**
 
-🤖 **اسمي BotFinder وأنا مساعدك الخاص للتسوق من AliExpress**
+🤖 **BotFinder**  
+أنا **متخصص في البحث عن منتجات على موقع AliExpress لتوفير المال**
 
-🛍️ **لبدء الاستفادة من خدماتي:**
-
-1. اضغط على /start لرؤية القائمة الكاملة
-2. أو أرسل لي مباشرة رابط أي منتج من AliExpress
-
-🚀 **لتبدأ الآن، انسخ رابط منتج من AliExpress وأرسله لي!**
-
-ستحصل على:
-• ✅ أفضل الأسعار
-• ✅ عروض حصرية  
-• ✅ تخفيضات إضافية
-• ✅ مقارنة بين البائعين"""
+👇 **قم بالضغط على START وسأقوم بشرح كيفية الاستفادة من خدماتي**
+        """
         
-        bot.send_message(
+        # إنشاء زر START
+        start_keyboard = types.InlineKeyboardMarkup()
+        start_button = types.InlineKeyboardButton("🚀 START", callback_data='show_welcome')
+        start_keyboard.add(start_button)
+        
+        # رابط الصورة الجديدة للرسالة الترحيبية
+        welcome_photo_url = "https://i.postimg.cc/your-new-welcome-image.jpg"  # غير هذا الرابط إلى الصورة التي تريدها
+        
+        send_welcome_with_photo(
             message.chat.id,
             welcome_first_message,
+            photo_url=welcome_photo_url,
+            reply_markup=start_keyboard
+        )
+
+# معالج لزر START
+@bot.callback_query_handler(func=lambda call: call.data == 'show_welcome')
+def show_welcome_message(call):
+    """عرض رسالة الترحيب الكاملة عند الضغط على START"""
+    welcome_full_message = """🎉 **مرحباً بك في بوت AliExpress الذكي!** 
+
+🤖 **ماذا يمكنني أن أفعل لك؟**
+
+✅ أنا متخصص في البحث عن منتجات AliExpress لتوفير المال
+✅ أحصل لك على أفضل العروض والتخفيضات
+✅ أقارن الأسعار بين مختلف البائعين
+✅ أوفر لك روابط حصرية بأسعار مخفضة
+
+🛍️ **كيف تستفيد من خدماتي؟**
+
+1. 🔍 ابحث عن أي منتج تريده على AliExpress
+2. 📋 انسخ رابط المنتج
+3. 📤 أرسل الرابط لي هنا
+4. 💰 سأعرض لك أفضل العروض والتخفيضات المتاحة!
+
+💰 **مميزات إضافية:**
+• عرض العملات والمكافآت
+• تخفيضات على سلة التسوق
+• عروض حصرية يومية
+• ألعاب لجمع النقاط
+
+🚀 **لتبدأ، اختر أحد الخيارات أدناه أو أرسل لي رابط منتج!**"""
+    
+    # رابط الصورة للرسالة الترحيبية الكاملة
+    welcome_full_photo = "https://i.postimg.cc/your-full-welcome-image.jpg"  # غير هذا الرابط إلى الصورة التي تريدها
+    
+    try:
+        # حذف الرسالة القديمة وإرسال جديدة مع الصورة
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        send_welcome_with_photo(
+            call.message.chat.id,
+            welcome_full_message,
+            photo_url=welcome_full_photo,
+            reply_markup=keyboardStart
+        )
+    except Exception as e:
+        print(f"Error updating welcome message: {e}")
+        # إذا فشل الحذف، أعد توجيه الرسالة فقط
+        bot.send_message(
+            call.message.chat.id,
+            welcome_full_message,
+            reply_markup=keyboardStart,
             parse_mode='Markdown'
         )
-    else:
-        # إذا لم تكن رسالة رابط أو رسالة ترحيبية، تجاهل أو أعد توجيه
-        pass
 
-# الدالة الأصلية لمعالجة الروابط (بدون تغيير)
+# الدالة الأصلية لمعالجة الروابط
 def echo_all(message):
     try:
         print(f"Message received: {message.text}")
@@ -391,7 +471,7 @@ def get_affiliate_links(message, message_id, link):
                 title_link = product_details[0].product_title
                 img_link = product_details[0].product_main_image_url
                 
-                # Convert price to dzd
+                # Convert price to DZD (الدينار الجزائري)
                 exchange_rate = get_usd_to_dzd_rate()
                 if exchange_rate:
                     price_pro_dzd = price_pro * exchange_rate
@@ -536,6 +616,8 @@ def handle_callback_query(call):
             # Replace with your link and message if needed
             link = 'https://www.aliexpress.com/p/shoppingcart/index.html?'
             get_affiliate_shopcart_link(link, call.message)
+        elif call.data == 'show_welcome':
+            show_welcome_message(call)
         else:
             bot.send_message(call.message.chat.id, "..")
             img_link2 = "https://i.postimg.cc/VvmhgQ1h/Basket-aliexpress-telegram.png"
