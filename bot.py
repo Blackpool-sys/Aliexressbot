@@ -201,7 +201,7 @@ def generate_coin_affiliate_link(product_id):
     """إنشاء رابط تابع باستخدام نظام coin-index للقناة 620"""
     try:
         # أنشئ رابط coin-index
-        coin_index_url = f"https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=syicon&productIds={product_id}"
+        coin_index_url = f"https://m.aliexpress.com/p/coin-index/index.html?productIds={product_id}&_immersiveMode=true&from=syicon"
         
         # أنشئ الرابط التابع
         affiliate_links = aliexpress.get_affiliate_links(coin_index_url)
