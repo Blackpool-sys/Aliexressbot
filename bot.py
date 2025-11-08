@@ -90,7 +90,7 @@ keyboardStart.add(btn1, btn2, btn3, btn4)
 keyboard = types.InlineKeyboardMarkup(row_width=1)
 btn1 = types.InlineKeyboardButton("⭐️ صفحة مراجعة وجمع النقاط يوميا ⭐️", url="https://s.click.aliexpress.com/e/_DdwUZVd")
 btn2 = types.InlineKeyboardButton("⭐️تخفيض العملات على منتجات السلة 🛒⭐️", callback_data='click')
-btn3 = types.InlineKeyboardButton("❤️ اشترك في القناة للمزيد من العروض ❤️", url="https://t.me/ShopAliExpressMaroc")
+btn3 = types.InlineKeyboardButton("❤️ اشترك في القناة للمزيد من العروض ❤️", url="https://t.me/AliexpresSuperrDeals")
 keyboard.add(btn1, btn2, btn3)
 
 keyboard_games = types.InlineKeyboardMarkup(row_width=1)
